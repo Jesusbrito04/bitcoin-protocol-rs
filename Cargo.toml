@@ -1,0 +1,3 @@
+[workspace]
+resolver = "3"
+members = ["bitcoin-protocol","p2p-client"]
