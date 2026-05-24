@@ -1,10 +1,11 @@
 use bitcoin_protocol::{
     handshake::VersionMessage,
-    inventory::{InvMessage, InvType, InvVector},
+    inventory::{InvMessage, InvType, InvVector}, network::{MAINNET, MsgHeader, VERACK, VERSION},
 };
+use std::{ io::{Read, Write}, net::{TcpStream}};
 
 fn main() {
-    let message = VersionMessage {
+    let version = VersionMessage {
         version: 60002,
         services: 1,
         timestamp: 1355854353,
@@ -49,5 +50,54 @@ fn main() {
     println!(
         "InvMessage deserialized: {:#?}",
         InvMessage::deserialize(&inv_serialized)
-    )
+    );
+
+    let version_serialize = version.serialize();
+    let payload_size: u32 = version_serialize.len().try_into().unwrap();
+    let checksum = MsgHeader::calculate_checksum(&version_serialize);
+
+    let header_msg = MsgHeader {
+        magic: MAINNET,
+        command: VERSION,
+        payload_size,
+        checksum
+    }.serialize();
+
+    let mut message: Vec<u8> = Vec::new();
+    message.extend_from_slice(&header_msg);
+    message.extend_from_slice(&version_serialize);
+
+    if let Ok(mut stream) = TcpStream::connect("74.48.195.218:8333") {
+        println!("Connect Successfully: {:?}", stream);
+        stream.write_all(&message).expect("Error sending the message");
+        println!("Submmited message.");
+
+        let mut response_header_bytes = [0u8; 24];
+        stream.read_exact(&mut response_header_bytes).expect("Error while read exact bytes");
+        let response_header = MsgHeader::deserialize(&response_header_bytes).expect("Error reading the response");
+        println!("{:?}", response_header);
+
+        let mut response_payload_bytes = vec![0u8; response_header.payload_size as usize];
+        stream.read_exact(&mut response_payload_bytes).expect("Error while read exact bytes");
+        let response_payload = VersionMessage::deserialize(&response_payload_bytes).expect("Error reading payload");
+        println!("Hi: {}", response_payload.user_agent);
+
+        let verack = MsgHeader {
+            magic: MAINNET,
+            command: VERACK,
+            payload_size: 0,
+            checksum: [0x5d, 0xf6, 0xe0, 0xe2]
+        };
+
+        stream.write_all(&verack.serialize()).expect("Error sending the message");
+        println!("Verack Submmited");
+
+        let mut response_verack_bytes = [0u8; 24];
+        stream.read_exact(&mut response_verack_bytes).expect("Error while read exact bytes");
+        let response_verack = MsgHeader::deserialize(&response_verack_bytes).expect("Error reading the response");
+        println!("Response Verack{:?}", response_verack);
+    } else {
+        println!("Cant connect with these ip")
+    }
+
 }
