@@ -1,5 +1,6 @@
 pub mod handshake;
 pub mod inventory;
+pub mod network;
 
 pub fn encode_compact_size(var: usize) -> Vec<u8> {
     if var < 253 {
