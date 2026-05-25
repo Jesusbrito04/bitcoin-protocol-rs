@@ -15,6 +15,7 @@ pub struct InvVector {
     pub inv_hash: [u8; 32],
 }
 
+// The "inv" messages (inventory message) transmits one or more inventories of objects known to the transmitting peer.
 #[derive(Debug, Clone)]
 pub struct InvMessage {
     pub inventory: Vec<InvVector>,

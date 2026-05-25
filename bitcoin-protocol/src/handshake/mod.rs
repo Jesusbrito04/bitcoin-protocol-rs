@@ -1,5 +1,11 @@
+//! The handshake is a step series to get a successful connection to a peer. !//
+
 use crate::{decode_compact_size, encode_compact_size, P2PError};
 
+// The version message provides information about the transmitting node to the receiving node at the beginning of a connection.
+// until both peers have exchanged "version" messages. No other messages will be accepted.
+
+// If a "version" message is accepted, the receiving node should send a "verack" (version acknowledgment) message.
 #[derive(Debug)]
 pub struct VersionMessage {
     pub version: i32,

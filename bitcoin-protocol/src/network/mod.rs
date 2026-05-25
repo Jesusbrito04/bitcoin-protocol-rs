@@ -1,18 +1,25 @@
-use sha2::{Digest, Sha256};
 use crate::P2PError;
+use sha2::{Digest, Sha256};
 
+// Magic bytes indicating the originating network. They are by default little-endian bytes.
 pub const MAINNET: [u8; 4] = [0xf9, 0xbe, 0xb4, 0xd9];
 pub const TESTNET: [u8; 4] = [0x0b, 0x11, 0x09, 0x07];
 pub const REGTEST: [u8; 4] = [0xfa, 0xbf, 0xb5, 0xda];
-pub const VERSION: [u8; 12] = [0x76, 0x65, 0x72, 0x73, 0x69, 0x6F, 0x6E, 0x00, 0x00, 0x00, 0x00, 0x00];
-pub const VERACK: [u8; 12] = [0x76, 0x65, 0x72, 0x61, 0x63, 0x6B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+
+// Command message, ASCII string which identifies what message type is contained in the payload.
+pub const VERSION: [u8; 12] = [
+    0x76, 0x65, 0x72, 0x73, 0x69, 0x6F, 0x6E, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+pub const VERACK: [u8; 12] = [
+    0x76, 0x65, 0x72, 0x61, 0x63, 0x6B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
 
 #[derive(Debug)]
 pub struct MsgHeader {
     pub magic: [u8; 4],
     pub command: [u8; 12],
     pub payload_size: u32,
-    pub checksum: [u8; 4]
+    pub checksum: [u8; 4],
 }
 
 impl MsgHeader {
@@ -25,7 +32,8 @@ impl MsgHeader {
         buffer
     }
 
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, P2PError>{
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, P2PError> {
+        // The message header has a length of 24 bytes
         if bytes.len() < 24 {
             return Err(P2PError::NotEnoughBytesToSplit);
         }
@@ -33,20 +41,21 @@ impl MsgHeader {
         let mut command: [u8; 12] = [0u8; 12];
         let payload_size: u32;
         let mut checksum: [u8; 4] = [0u8; 4];
-        
+
         magic.copy_from_slice(&bytes[0..4]);
         command.copy_from_slice(&bytes[4..16]);
-        payload_size = u32::from_le_bytes(bytes[16..20].try_into().map_err(|e| P2PError::ConvertionError(format!("Error decoding payload size: {}", e)))?);
+        payload_size = u32::from_le_bytes(bytes[16..20].try_into().map_err(|e| {
+            P2PError::ConvertionError(format!("Error decoding payload size: {}", e))
+        })?);
         checksum.copy_from_slice(&bytes[20..24]);
-        
+
         Ok(Self {
             magic,
             command,
             payload_size,
-            checksum
+            checksum,
         })
     }
-
 
     pub fn calculate_checksum(payload: &[u8]) -> [u8; 4] {
         let hash1 = Sha256::digest(payload);
