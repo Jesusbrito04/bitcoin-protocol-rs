@@ -1,7 +1,7 @@
 use bitcoin_protocol::{
     handshake::VersionMessage,
     inventory::{InvMessage, InvType, InvVector},
-    network::{MsgHeader, MAINNET, VERACK, VERSION},
+    network::{Addr, MsgHeader, ADDR, GETADDR, INV, MAINNET, PING, PONG, VERACK, VERSION},
 };
 use std::{
     io::{Read, Write},
@@ -46,15 +46,7 @@ fn main() {
     let my_inventory = InvMessage {
         inventory: vec![msg_tx, msg_block],
     };
-    println!("InvMessage: {:#?}", my_inventory);
-
-    let inv_serialized = my_inventory.serialize();
-    println!("InvMessage serialized: {:#?}", inv_serialized);
-
-    println!(
-        "InvMessage deserialized: {:#?}",
-        InvMessage::deserialize(&inv_serialized)
-    );
+    let _inv_serialized = my_inventory.serialize();
 
     let version_serialize = version.serialize();
     let payload_size: u32 = version_serialize.len().try_into().unwrap();
@@ -111,9 +103,75 @@ fn main() {
         stream
             .read_exact(&mut response_verack_bytes)
             .expect("Error while read exact bytes");
-        let response_verack =
+        let _response_verack =
             MsgHeader::deserialize(&response_verack_bytes).expect("Error reading the response");
-        println!("Response Verack{:?}", response_verack);
+        println!("got Verack.");
+
+        let getaddr = &MsgHeader {
+            magic: MAINNET,
+            command: GETADDR,
+            payload_size: 0,
+            checksum: [0x5d, 0xf6, 0xe0, 0xe2],
+        }
+        .serialize();
+
+        stream.write_all(getaddr).unwrap();
+
+        loop {
+            let mut stream_bytes: [u8; 24] = [0u8; 24];
+            stream.read_exact(&mut stream_bytes).unwrap();
+            let msg_header = MsgHeader::deserialize(&stream_bytes)
+                .expect("Error reading the header stream bytes");
+            match msg_header.command {
+                ADDR => {
+                    let mut payload = vec![0; msg_header.payload_size as usize];
+                    stream.read_exact(&mut payload).unwrap();
+                    let addresses = Addr::deserialize(&payload).unwrap();
+                    println!("Addresses: {:?}", addresses)
+                }
+                PING => {
+                    let command = PONG;
+                    let mut payload: [u8; 8] = [0u8; 8];
+                    stream
+                        .read_exact(&mut payload)
+                        .expect("Error reading the payload");
+                    let checksum = MsgHeader::calculate_checksum(&payload);
+
+                    let pong = MsgHeader {
+                        magic: msg_header.magic,
+                        command,
+                        payload_size: 8,
+                        checksum,
+                    }
+                    .serialize();
+
+                    let mut message = Vec::new();
+                    message.extend_from_slice(&pong);
+                    message.extend_from_slice(&payload);
+                    stream.write_all(&message).unwrap()
+                }
+
+                INV => {
+                    let mut payload = vec![0; msg_header.payload_size as usize];
+
+                    stream
+                        .read_exact(&mut payload)
+                        .expect("Error reading the payload");
+
+                    let inv = InvMessage::deserialize(&payload);
+
+                    println!("Inventory {:?}", inv)
+                }
+                _ => {
+                    let mut payload = vec![0; msg_header.payload_size as usize];
+                    stream
+                        .read_exact(&mut payload)
+                        .expect("Error reading the payload");
+
+                    println!("payload: {:?}", String::from_utf8_lossy(&msg_header.command))
+                }
+            }
+        }
     } else {
         println!("Cant connect with these ip")
     }
