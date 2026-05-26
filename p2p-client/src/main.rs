@@ -1,14 +1,14 @@
 use bitcoin_protocol::{
     handshake::VersionMessage,
     inventory::{InvMessage, InvType, InvVector},
-    network::{Addr, MsgHeader, ADDR, GETADDR, INV, MAINNET, PING, PONG, VERACK, VERSION},
+    network::{ADDR, Addr, GETADDR, INV, MAINNET, MsgHeader, PING, PONG, VERACK, VERSION}, peers::PeerStore,
 };
 use std::{
-    io::{Read, Write},
+    io::{self, Error, ErrorKind, Read, Write},
     net::TcpStream,
 };
 
-fn main() {
+fn main() -> Result<(), Error> {
     let version = VersionMessage {
         version: 60002,
         services: 1,
@@ -64,6 +64,7 @@ fn main() {
     message.extend_from_slice(&header_msg);
     message.extend_from_slice(&version_serialize);
 
+    let mut peer_store = PeerStore::new();
     if let Ok(mut stream) = TcpStream::connect("74.48.195.218:8333") {
         println!("Connect Successfully: {:?}", stream);
         stream
@@ -73,16 +74,14 @@ fn main() {
 
         let mut response_header_bytes = [0u8; 24];
         stream
-            .read_exact(&mut response_header_bytes)
-            .expect("Error while read exact bytes");
+            .read_exact(&mut response_header_bytes)?;
         let response_header =
             MsgHeader::deserialize(&response_header_bytes).expect("Error reading the response");
         println!("{:?}", response_header);
 
         let mut response_payload_bytes = vec![0u8; response_header.payload_size as usize];
         stream
-            .read_exact(&mut response_payload_bytes)
-            .expect("Error while read exact bytes");
+            .read_exact(&mut response_payload_bytes)?;
         let response_payload =
             VersionMessage::deserialize(&response_payload_bytes).expect("Error reading payload");
         println!("Hi: {}", response_payload.user_agent);
@@ -95,14 +94,12 @@ fn main() {
         };
 
         stream
-            .write_all(&verack.serialize())
-            .expect("Error sending the message");
+            .write_all(&verack.serialize())?;
         println!("Verack Submmited");
 
         let mut response_verack_bytes = [0u8; 24];
         stream
-            .read_exact(&mut response_verack_bytes)
-            .expect("Error while read exact bytes");
+            .read_exact(&mut response_verack_bytes)?;
         let _response_verack =
             MsgHeader::deserialize(&response_verack_bytes).expect("Error reading the response");
         println!("got Verack.");
@@ -118,61 +115,90 @@ fn main() {
         stream.write_all(getaddr).unwrap();
 
         loop {
-            let mut stream_bytes: [u8; 24] = [0u8; 24];
-            stream.read_exact(&mut stream_bytes).unwrap();
-            let msg_header = MsgHeader::deserialize(&stream_bytes)
-                .expect("Error reading the header stream bytes");
-            match msg_header.command {
-                ADDR => {
-                    let mut payload = vec![0; msg_header.payload_size as usize];
-                    stream.read_exact(&mut payload).unwrap();
-                    let addresses = Addr::deserialize(&payload).unwrap();
-                    println!("Addresses: {:?}", addresses)
+            let mut network_mainnet: [u8; 4] = [0u8; 4];
+            if let Err(e) = stream.read_exact(&mut network_mainnet) {
+                eprintln!("Error reading stream bytes: {}", e);
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    return Err(Error::new(ErrorKind::UnexpectedEof, "The connection has been close by the remote node"));
                 }
-                PING => {
-                    let command = PONG;
-                    let mut payload: [u8; 8] = [0u8; 8];
-                    stream
-                        .read_exact(&mut payload)
-                        .expect("Error reading the payload");
-                    let checksum = MsgHeader::calculate_checksum(&payload);
+                continue;
+            }
+            if network_mainnet == MAINNET {
+                let mut header: [u8; 20] = [0u8; 20];
+                stream.read_exact(&mut header).unwrap();
 
-                    let pong = MsgHeader {
-                        magic: msg_header.magic,
-                        command,
-                        payload_size: 8,
-                        checksum,
+                let mut network_command: [u8; 12] = [0u8; 12];
+                network_command.copy_from_slice(&header[..12]);
+                let mut payload_size: [u8; 4] = [0u8; 4];
+                payload_size.copy_from_slice(&header[12..16]);
+                let mut checksum: [u8; 4] = [0u8; 4];
+                checksum.copy_from_slice(&header[16..20]);
+
+                let receive_header = MsgHeader {
+                    magic: network_mainnet,
+                    command: network_command,
+                    payload_size: u32::from_le_bytes(payload_size),
+                    checksum,
+                };
+
+                match receive_header.command {
+                    ADDR => {
+                        let mut payload = vec![0; receive_header.payload_size as usize];
+                        stream.read_exact(&mut payload).unwrap();
+                        let addresses = Addr::deserialize(&payload).unwrap();
+
+                        for addr in addresses.ip_addresses {
+                            peer_store.add_peer(addr);
+                        }
                     }
-                    .serialize();
+                    PING => {
+                        let command = PONG;
+                        let mut payload: [u8; 8] = [0u8; 8];
+                        stream
+                            .read_exact(&mut payload)
+                            .expect("Error reading the payload");
+                        let checksum = MsgHeader::calculate_checksum(&payload);
 
-                    let mut message = Vec::new();
-                    message.extend_from_slice(&pong);
-                    message.extend_from_slice(&payload);
-                    stream.write_all(&message).unwrap()
-                }
+                        let pong = MsgHeader {
+                            magic: receive_header.magic,
+                            command,
+                            payload_size: 8,
+                            checksum,
+                        }
+                        .serialize();
 
-                INV => {
-                    let mut payload = vec![0; msg_header.payload_size as usize];
+                        let mut message = Vec::new();
+                        message.extend_from_slice(&pong);
+                        message.extend_from_slice(&payload);
+                        stream.write_all(&message).unwrap()
+                    }
 
-                    stream
-                        .read_exact(&mut payload)
-                        .expect("Error reading the payload");
+                    INV => {
+                        let mut payload = vec![0; receive_header.payload_size as usize];
 
-                    let inv = InvMessage::deserialize(&payload);
+                        stream
+                            .read_exact(&mut payload)
+                            .expect("Error reading the payload");
 
-                    println!("Inventory {:?}", inv)
-                }
-                _ => {
-                    let mut payload = vec![0; msg_header.payload_size as usize];
-                    stream
-                        .read_exact(&mut payload)
-                        .expect("Error reading the payload");
+                        let inv = InvMessage::deserialize(&payload);
 
-                    println!("payload: {:?}", String::from_utf8_lossy(&msg_header.command))
+                        println!("Inventory {:?}", inv)
+                    }
+                    _ => {
+                        let mut payload = vec![0; receive_header.payload_size as usize];
+                        stream
+                            .read_exact(&mut payload)
+                            .expect("Error reading the payload");
+
+                        println!(
+                            "payload: {:?}",
+                            String::from_utf8_lossy(&receive_header.command)
+                        )
+                    }
                 }
             }
         }
     } else {
-        println!("Cant connect with these ip")
+        Err(ErrorKind::ConnectionRefused)?
     }
 }

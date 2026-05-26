@@ -146,7 +146,7 @@ impl Addr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq, Eq)]
 pub struct IpAddress {
     pub time: u32,
     pub service: u64,
