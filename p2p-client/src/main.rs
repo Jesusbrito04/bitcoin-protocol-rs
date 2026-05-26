@@ -150,6 +150,8 @@ fn main() -> Result<(), Error> {
                         for addr in addresses.ip_addresses {
                             peer_store.add_peer(addr);
                         }
+
+                        peer_store.save();
                     }
                     PING => {
                         let command = PONG;

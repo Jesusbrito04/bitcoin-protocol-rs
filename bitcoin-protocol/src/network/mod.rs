@@ -1,4 +1,5 @@
 use crate::{decode_compact_size, encode_compact_size, P2PError};
+use std::net::{ Ipv6Addr };
 use sha2::{Digest, Sha256};
 
 // Magic bytes indicating the originating network. They are by default little-endian bytes.
@@ -146,7 +147,7 @@ impl Addr {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct IpAddress {
     pub time: u32,
     pub service: u64,
