@@ -1,7 +1,8 @@
 use bitcoin_protocol::{
     handshake::VersionMessage,
     inventory::{InvMessage, InvType, InvVector},
-    network::{ADDR, Addr, GETADDR, INV, MAINNET, MsgHeader, PING, PONG, VERACK, VERSION}, peers::PeerStore,
+    network::{Addr, MsgHeader, ADDR, GETADDR, INV, MAINNET, PING, PONG, VERACK, VERSION},
+    peers::PeerStore,
 };
 use std::{
     io::{self, Error, ErrorKind, Read, Write},
@@ -73,15 +74,13 @@ fn main() -> Result<(), Error> {
         println!("Submmited message.");
 
         let mut response_header_bytes = [0u8; 24];
-        stream
-            .read_exact(&mut response_header_bytes)?;
+        stream.read_exact(&mut response_header_bytes)?;
         let response_header =
             MsgHeader::deserialize(&response_header_bytes).expect("Error reading the response");
         println!("{:?}", response_header);
 
         let mut response_payload_bytes = vec![0u8; response_header.payload_size as usize];
-        stream
-            .read_exact(&mut response_payload_bytes)?;
+        stream.read_exact(&mut response_payload_bytes)?;
         let response_payload =
             VersionMessage::deserialize(&response_payload_bytes).expect("Error reading payload");
         println!("Hi: {}", response_payload.user_agent);
@@ -93,13 +92,11 @@ fn main() -> Result<(), Error> {
             checksum: [0x5d, 0xf6, 0xe0, 0xe2],
         };
 
-        stream
-            .write_all(&verack.serialize())?;
+        stream.write_all(&verack.serialize())?;
         println!("Verack Submmited");
 
         let mut response_verack_bytes = [0u8; 24];
-        stream
-            .read_exact(&mut response_verack_bytes)?;
+        stream.read_exact(&mut response_verack_bytes)?;
         let _response_verack =
             MsgHeader::deserialize(&response_verack_bytes).expect("Error reading the response");
         println!("got Verack.");
@@ -119,7 +116,10 @@ fn main() -> Result<(), Error> {
             if let Err(e) = stream.read_exact(&mut network_mainnet) {
                 eprintln!("Error reading stream bytes: {}", e);
                 if e.kind() == io::ErrorKind::UnexpectedEof {
-                    return Err(Error::new(ErrorKind::UnexpectedEof, "The connection has been close by the remote node"));
+                    return Err(Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "The connection has been close by the remote node",
+                    ));
                 }
                 continue;
             }

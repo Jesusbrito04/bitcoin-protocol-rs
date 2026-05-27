@@ -1,3 +1,5 @@
+use std::{fmt::Display, io};
+
 pub mod handshake;
 pub mod inventory;
 pub mod network;
@@ -31,31 +33,51 @@ pub fn decode_compact_size(bytes: &mut &[u8]) -> Result<u64, P2PError> {
             let (val, rest) = bytes.split_at(2);
             *bytes = rest;
             Ok(u16::from_le_bytes(val.try_into().map_err(|_| {
-                P2PError::ConvertionError("Error while try to convert bytes into u16".to_string())
+                P2PError::ParseError("Error while try to convert bytes into u16".to_string())
             })?) as u64)
         }
         254 => {
             let (val, rest) = bytes.split_at(4);
             *bytes = rest;
             Ok(u32::from_le_bytes(val.try_into().map_err(|_| {
-                P2PError::ConvertionError("Error while try to convert bytes into u32".to_string())
+                P2PError::ParseError("Error while try to convert bytes into u32".to_string())
             })?) as u64)
         }
         _ => {
             let (val, rest) = bytes.split_at(8);
             *bytes = rest;
             Ok(u64::from_le_bytes(val.try_into().map_err(|_| {
-                P2PError::ConvertionError("Error while try to convert bytes into u64".to_string())
+                P2PError::ParseError("Error while try to convert bytes into u64".to_string())
             })?) as u64)
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum P2PError {
-    InvalidVersionMessageLen,
-    ConvertionError(String),
+    CustomError(String),
     NotEnoughBytesToSplit,
     ParseError(String),
     OutOfRange,
+    IoError(io::Error),
+}
+
+impl Display for P2PError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            P2PError::ParseError(s) => write!(f, "Error parsing: {}", s),
+            P2PError::OutOfRange => write!(f, "Out of range"),
+            P2PError::NotEnoughBytesToSplit => write!(f, "Not enough bytes to split"),
+            P2PError::CustomError(s) => write!(f, "{}", s),
+            P2PError::IoError(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl std::error::Error for P2PError {}
+
+impl From<io::Error> for P2PError {
+    fn from(value: io::Error) -> Self {
+        P2PError::IoError(value)
+    }
 }

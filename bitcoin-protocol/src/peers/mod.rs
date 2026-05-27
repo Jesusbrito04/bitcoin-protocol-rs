@@ -1,19 +1,23 @@
-use std::{collections::HashSet, fs::{File, read, write}, io::{Read, Write}};
-use crate::{decode_compact_size, encode_compact_size, network::IpAddress};
+use crate::{decode_compact_size, encode_compact_size, network::IpAddress, P2PError};
+use std::{
+    collections::HashSet,
+    fs::File,
+    io::{Read, Write},
+};
 
 const PEERSTOREVERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
 pub struct PeerStore {
     pub version: u32,
-    pub peers: HashSet<IpAddress>
+    pub peers: HashSet<IpAddress>,
 }
 
 impl PeerStore {
     pub fn new() -> Self {
         PeerStore {
             version: PEERSTOREVERSION,
-            peers: HashSet::new()
+            peers: HashSet::new(),
         }
     }
     pub fn add_peer(&mut self, value: IpAddress) -> bool {
@@ -29,32 +33,38 @@ impl PeerStore {
             for addr in &self.peers {
                 buffer.extend_from_slice(&addr.serialize());
             }
-            
+
             if let Err(e) = file.write_all(&buffer) {
                 eprintln!("Cant write in the file: {}", e)
             }
-            
+
             println!("Save correctly")
         }
     }
 
-    pub fn load() -> Self {
-        let mut file = File::open("./peers.dat").unwrap();
+    pub fn load() -> Result<Self, P2PError> {
+        let mut file = match File::open("./peers.dat") {
+            Ok(f) => f,
+            Err(e) => return Err(e)?,
+        };
         let mut buffer: Vec<u8> = Vec::new();
-        file.read_to_end(&mut buffer).unwrap();
+        file.read_to_end(&mut buffer)?;
         let mut cursor = &buffer[..];
 
         let mut peers = HashSet::new();
 
         let (version, rest) = cursor.split_at(4);
         cursor = rest;
-        let peers_len = decode_compact_size(&mut cursor).unwrap();
+        let peers_len = decode_compact_size(&mut cursor).map_err(|e| e)?;
         for _ in 0..peers_len {
             let (peer, rest) = cursor.split_at(30);
             let addr = IpAddress::deserialize(&mut peer.as_ref()).unwrap();
             peers.insert(addr);
             cursor = rest
         }
-        PeerStore { version: u32::from_le_bytes(version.try_into().unwrap()), peers }
+        Ok(PeerStore {
+            version: u32::from_le_bytes(version.try_into().unwrap()),
+            peers,
+        })
     }
 }

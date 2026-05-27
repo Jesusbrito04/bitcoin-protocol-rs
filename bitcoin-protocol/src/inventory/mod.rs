@@ -51,7 +51,7 @@ impl InvMessage {
             let (item, rest) = bytes.split_at(36);
             bytes = rest;
             let inv_type = u32::from_le_bytes(item[0..4].try_into().map_err(|_| {
-                P2PError::ConvertionError(format!("Error while try to convert bytes into u32"))
+                P2PError::ParseError(format!("Error while try to convert bytes into u32"))
             })?);
             let inv_hash = &item[4..];
             let inv_vec = InvVector {
