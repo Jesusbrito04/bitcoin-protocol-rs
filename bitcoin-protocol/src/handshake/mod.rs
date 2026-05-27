@@ -48,82 +48,82 @@ impl VersionMessage {
 
     pub fn deserialize(mut bytes: &[u8]) -> Result<Self, P2PError> {
         if bytes.len() < 4 + 8 + 8 {
-            return Err(P2PError::CustomError(
+            return Err(P2PError::Custom(
                 "Invalid Version Message length".to_string(),
             ));
         }
         let version = i32::from_le_bytes(bytes[0..4].try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into i32"))
+            P2PError::Parse(format!("Error while try to convert bytes into i32"))
         })?);
         let services = u64::from_le_bytes(bytes[4..12].try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into u64"))
+            P2PError::Parse(format!("Error while try to convert bytes into u64"))
         })?);
         let timestamp = i64::from_le_bytes(bytes[12..20].try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into i64"))
+            P2PError::Parse(format!("Error while try to convert bytes into i64"))
         })?);
         bytes = &bytes[20..];
 
         if bytes.len() < 8 + 16 + 2 {
-            return Err(P2PError::CustomError(
+            return Err(P2PError::Custom(
                 "Invalid Version Message length".to_string(),
             ));
         }
         let addr_recv_service = u64::from_le_bytes(bytes[0..8].try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into u64"))
+            P2PError::Parse(format!("Error while try to convert bytes into u64"))
         })?);
         let addr_recv_ip: [u8; 16] = bytes[8..24]
             .try_into()
-            .map_err(|err| P2PError::ParseError(format!("{}", err)))?;
+            .map_err(|err| P2PError::Parse(format!("{}", err)))?;
         let addr_recv_port = u16::from_be_bytes(bytes[24..26].try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into u16"))
+            P2PError::Parse(format!("Error while try to convert bytes into u16"))
         })?);
         bytes = &bytes[26..];
 
         if bytes.len() < 8 + 16 + 2 {
-            return Err(P2PError::CustomError(
+            return Err(P2PError::Custom(
                 "Invalid Version Message length".to_string(),
             ));
         }
         let addr_trans_service = u64::from_le_bytes(bytes[0..8].try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into u64"))
+            P2PError::Parse(format!("Error while try to convert bytes into u64"))
         })?);
         let addr_trans_ip: [u8; 16] = bytes[8..24]
             .try_into()
-            .map_err(|err| P2PError::ParseError(format!("{}", err)))?;
+            .map_err(|err| P2PError::Parse(format!("{}", err)))?;
         let addr_trans_port = u16::from_be_bytes(bytes[24..26].try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into u16"))
+            P2PError::Parse(format!("Error while try to convert bytes into u16"))
         })?);
         bytes = &bytes[26..];
 
         if bytes.len() < 8 {
-            return Err(P2PError::CustomError(
+            return Err(P2PError::Custom(
                 "Invalid Version Message length".to_string(),
             ));
         }
         let nonce = u64::from_le_bytes(bytes[0..8].try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into u64"))
+            P2PError::Parse(format!("Error while try to convert bytes into u64"))
         })?);
         bytes = &bytes[8..];
 
         let user_agent_len = decode_compact_size(&mut bytes)? as usize;
         if bytes.len() < user_agent_len {
-            return Err(P2PError::CustomError(
+            return Err(P2PError::Custom(
                 "Invalid Version Message length".to_string(),
             ));
         }
         let (ua_slice, rest) = bytes.split_at(user_agent_len);
         let user_agent = String::from_utf8(ua_slice.to_vec()).map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into String"))
+            P2PError::Parse(format!("Error while try to convert bytes into String"))
         })?;
         bytes = rest;
 
         if bytes.len() < 4 + 1 {
-            return Err(P2PError::CustomError(
+            return Err(P2PError::Custom(
                 "Invalid Version Message length".to_string(),
             ));
         }
         let start_height = i32::from_le_bytes(bytes[0..4].try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into i32"))
+            P2PError::Parse(format!("Error while try to convert bytes into i32"))
         })?);
         let relay = bytes[4] != 0;
 

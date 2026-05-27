@@ -3,6 +3,7 @@ use bitcoin_protocol::{
     inventory::{InvMessage, InvType, InvVector},
     network::{Addr, MsgHeader, ADDR, GETADDR, INV, MAINNET, PING, PONG, VERACK, VERSION},
     peers::PeerStore,
+    P2PError,
 };
 use std::{
     io::{self, Error, ErrorKind, Read, Write},
@@ -116,7 +117,7 @@ fn main() -> Result<(), P2PError> {
                 eprintln!("Error reading stream bytes: {}", e);
                 if e.kind() == io::ErrorKind::UnexpectedEof {
                     return Err(P2PError::CustomError(
-                        "The connection has been close by the remote node".to_string()
+                        "The connection has been close by the remote node".to_string(),
                     ));
                 }
                 continue;

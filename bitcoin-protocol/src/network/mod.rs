@@ -62,7 +62,7 @@ impl MsgHeader {
         command.copy_from_slice(&bytes[4..16]);
         payload_size =
             u32::from_le_bytes(bytes[16..20].try_into().map_err(|e| {
-                P2PError::ParseError(format!("Error decoding payload size: {}", e))
+                P2PError::Parse(format!("Error decoding payload size: {}", e))
             })?);
         checksum.copy_from_slice(&bytes[20..24]);
 
@@ -99,7 +99,7 @@ impl Ping {
     }
     pub fn deserialize(bytes: &[u8]) -> Result<Self, P2PError> {
         let nonce = u64::from_le_bytes(bytes[..8].try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into u64"))
+            P2PError::Parse(format!("Error while try to convert bytes into u64"))
         })?);
         Ok(Self { nonce: nonce })
     }
@@ -114,7 +114,7 @@ impl Pong {
 
     pub fn deserialize(bytes: &[u8]) -> Result<Self, P2PError> {
         let nonce = u64::from_le_bytes(bytes[..8].try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into u64"))
+            P2PError::Parse(format!("Error while try to convert bytes into u64"))
         })?);
         Ok(Self { nonce: nonce })
     }
@@ -169,19 +169,19 @@ impl IpAddress {
     pub fn deserialize(bytes: &mut &[u8]) -> Result<Self, P2PError> {
         let (time, rest) = bytes.split_at(4);
         let time = u32::from_le_bytes(time.try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into u32"))
+            P2PError::Parse(format!("Error while try to convert bytes into u32"))
         })?);
         let (service, rest) = rest.split_at(8);
         let service = u64::from_le_bytes(service.try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into u64"))
+            P2PError::Parse(format!("Error while try to convert bytes into u64"))
         })?);
         let (ip, rest) = rest.split_at(16);
         let ip = ip
             .try_into()
-            .map_err(|e| P2PError::ParseError(format!("Error decoding ip address: {}", e)))?;
+            .map_err(|e| P2PError::Parse(format!("Error decoding ip address: {}", e)))?;
         let (port, rest) = rest.split_at(2);
         let port = u16::from_be_bytes(port.try_into().map_err(|_| {
-            P2PError::ParseError(format!("Error while try to convert bytes into u16"))
+            P2PError::Parse(format!("Error while try to convert bytes into u16"))
         })?);
 
         *bytes = rest;
