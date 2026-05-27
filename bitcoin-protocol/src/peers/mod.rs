@@ -57,10 +57,8 @@ impl PeerStore {
         cursor = rest;
         let peers_len = decode_compact_size(&mut cursor).map_err(|e| e)?;
         for _ in 0..peers_len {
-            let (peer, rest) = cursor.split_at(30);
-            let addr = IpAddress::deserialize(&mut peer.as_ref()).unwrap();
+            let addr = IpAddress::deserialize(&mut cursor).unwrap();
             peers.insert(addr);
-            cursor = rest
         }
         Ok(PeerStore {
             version: u32::from_le_bytes(version.try_into().unwrap()),

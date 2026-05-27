@@ -9,7 +9,7 @@ use std::{
     net::TcpStream,
 };
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<(), P2PError> {
     let version = VersionMessage {
         version: 60002,
         services: 1,
@@ -110,15 +110,13 @@ fn main() -> Result<(), Error> {
         .serialize();
 
         stream.write_all(getaddr).unwrap();
-
         loop {
             let mut network_mainnet: [u8; 4] = [0u8; 4];
             if let Err(e) = stream.read_exact(&mut network_mainnet) {
                 eprintln!("Error reading stream bytes: {}", e);
                 if e.kind() == io::ErrorKind::UnexpectedEof {
-                    return Err(Error::new(
-                        ErrorKind::UnexpectedEof,
-                        "The connection has been close by the remote node",
+                    return Err(P2PError::CustomError(
+                        "The connection has been close by the remote node".to_string()
                     ));
                 }
                 continue;
@@ -201,6 +199,6 @@ fn main() -> Result<(), Error> {
             }
         }
     } else {
-        Err(ErrorKind::ConnectionRefused)?
+        Err(Error::from(ErrorKind::ConnectionRefused))?
     }
 }
