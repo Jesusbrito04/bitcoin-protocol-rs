@@ -1,6 +1,6 @@
 use crate::{
     handshake::VersionMessage,
-    network::{IpAddress, MsgHeader, MAINNET, VERACK, VERSION},
+    network::{IpAddress, MsgHeader, GETADDR, MAINNET, VERACK, VERSION},
     P2PError,
 };
 use std::{
@@ -17,16 +17,17 @@ pub struct Connected {}
 pub struct Disconnected {}
 
 #[derive(Debug)]
+pub struct Handshake {}
+
+#[derive(Debug)]
 pub struct Peer<State = Disconnected> {
     pub stream: TcpStream,
     pub peer: IpAddress,
     state: PhantomData<State>,
 }
 
-impl Peer {}
-
 impl Peer<Disconnected> {
-    pub fn connect_str(socket: &str) -> Result<Peer<Connected>, P2PError> {
+    pub fn connect_str(socket: &str) -> Result<Peer<Handshake>, P2PError> {
         let socket_address = if socket.contains(":") {
             let socket: SocketAddr = socket
                 .parse()
@@ -49,6 +50,8 @@ impl Peer<Disconnected> {
             IpAddr::V6(ip) => ip.octets(),
         };
 
+        let stream = TcpStream::connect(socket)?;
+
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_err(|_| P2PError::Custom("Can't get the unix timestamp".to_string()))?
@@ -63,9 +66,18 @@ impl Peer<Disconnected> {
             time: timestamp,
         };
 
-        let mut stream = TcpStream::connect(socket)?;
+        Ok(Peer {
+            stream,
+            peer,
+            state: PhantomData::<Handshake>,
+        })
+    }
+}
 
-        let version = VersionMessage {
+impl Peer<Handshake> {
+    pub fn do_handshake(mut self) -> Result<Peer<Connected>, P2PError> {
+        // Build the Version-Message payload (identify my node).
+        let version_serialize = VersionMessage {
             version: 60002,
             services: 1,
             timestamp: 1355854353,
@@ -79,11 +91,12 @@ impl Peer<Disconnected> {
             user_agent: "/Jesus:0.1.0/".to_string(),
             start_height: 212672,
             relay: false,
-        };
-        let version_serialize = version.serialize();
+        }
+        .serialize();
+
+        // Build the Message-Header.
         let payload_size = version_serialize.len() as u32;
         let checksum = MsgHeader::calculate_checksum(&version_serialize);
-
         let header_msg = MsgHeader {
             magic: MAINNET,
             command: VERSION,
@@ -92,48 +105,64 @@ impl Peer<Disconnected> {
         }
         .serialize();
 
+        // Build and send the message stream-bytes.
         let mut message: Vec<u8> = Vec::new();
         message.extend_from_slice(&header_msg);
         message.extend_from_slice(&version_serialize);
-
-        stream
-            .write_all(&message)
-            .expect("Error sending the message");
+        self.stream.write_all(&message)?;
         println!("Submmited message.");
 
-        let mut response_header_bytes = [0u8; 24];
-        stream.read_exact(&mut response_header_bytes)?;
+        // Spect his Version-Message as a response.
+        let mut buffer = [0u8; 24];
+        self.stream.read_exact(&mut buffer)?;
+        let response_header = MsgHeader::deserialize(&buffer)?;
 
-        let response_header =
-            MsgHeader::deserialize(&response_header_bytes).expect("Error reading the response");
+        if response_header.command != VERSION {
+            return Err(P2PError::Custom(
+                "Can't establish the handshake correctly".to_string(),
+            ));
+        }
 
-        let mut response_payload_bytes = vec![0u8; response_header.payload_size as usize];
-        stream.read_exact(&mut response_payload_bytes)?;
+        // Read his Version-Message payload.
+        let mut buffer = vec![0u8; response_header.payload_size as usize];
+        self.stream.read_exact(&mut buffer)?;
+        let _response_payload = VersionMessage::deserialize(&buffer)?; // TODO: Verify version
 
-        let response_payload =
-            VersionMessage::deserialize(&response_payload_bytes).expect("Error reading payload");
-        println!("Hi: {}", response_payload.user_agent);
-
+        // Build and send version-acknowledge
         let verack = MsgHeader {
             magic: MAINNET,
             command: VERACK,
             payload_size: 0,
             checksum: [0x5d, 0xf6, 0xe0, 0xe2],
         };
-
-        stream.write_all(&verack.serialize())?;
+        self.stream.write_all(&verack.serialize())?;
         println!("Verack Submmited");
 
-        let mut response_verack_bytes = [0u8; 24];
-        stream.read_exact(&mut response_verack_bytes)?;
-        let _response_verack =
-            MsgHeader::deserialize(&response_verack_bytes).expect("Error reading the response");
+        // Spect his version-acknowledge as a response.
+        let mut buffer = [0u8; 24];
+        self.stream.read_exact(&mut buffer)?;
+        let _response_verack = MsgHeader::deserialize(&buffer).expect("Error reading the response");
         println!("got Verack.");
 
         Ok(Peer {
-            stream,
-            peer,
+            stream: self.stream,
+            peer: self.peer,
             state: PhantomData::<Connected>,
         })
+    }
+}
+
+impl Peer<Connected> {
+    pub fn get_addr(&mut self) -> Result<(), P2PError> {
+        let getaddr = &MsgHeader {
+            magic: MAINNET,
+            command: GETADDR,
+            payload_size: 0,
+            checksum: [0x5d, 0xf6, 0xe0, 0xe2],
+        }
+        .serialize();
+
+        self.stream.write_all(getaddr)?;
+        Ok(())
     }
 }

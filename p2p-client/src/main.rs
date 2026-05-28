@@ -1,6 +1,6 @@
 use bitcoin_protocol::{
     inventory::{InvMessage, InvType, InvVector},
-    network::{Addr, MsgHeader, ADDR, GETADDR, INV, MAINNET, PING, PONG},
+    network::{Addr, MsgHeader, ADDR, INV, MAINNET, PING, PONG},
     peers::{peer::Peer, PeerStore},
     P2PError,
 };
@@ -32,19 +32,10 @@ fn main() -> Result<(), P2PError> {
 
     let mut peer_store = PeerStore::new();
 
-    let mut peer = Peer::connect_str("74.48.195.218").unwrap();
+    let mut peer = Peer::connect_str("74.48.195.218")?.do_handshake()?;
 
-    println!("peer: {:?}", peer);
+    peer.get_addr()?;
 
-    let getaddr = &MsgHeader {
-        magic: MAINNET,
-        command: GETADDR,
-        payload_size: 0,
-        checksum: [0x5d, 0xf6, 0xe0, 0xe2],
-    }
-    .serialize();
-
-    peer.stream.write_all(getaddr).unwrap();
     loop {
         let mut network_mainnet: [u8; 4] = [0u8; 4];
         if let Err(e) = peer.stream.read_exact(&mut network_mainnet) {
@@ -90,8 +81,7 @@ fn main() -> Result<(), P2PError> {
                     let command = PONG;
                     let mut payload: [u8; 8] = [0u8; 8];
                     peer.stream
-                        .read_exact(&mut payload)
-                        .expect("Error reading the payload");
+                        .read_exact(&mut payload)?;
                     let checksum = MsgHeader::calculate_checksum(&payload);
 
                     let pong = MsgHeader {
@@ -101,7 +91,7 @@ fn main() -> Result<(), P2PError> {
                         checksum,
                     }
                     .serialize();
-
+                    println!("ping");
                     let mut message = Vec::new();
                     message.extend_from_slice(&pong);
                     message.extend_from_slice(&payload);
