@@ -30,7 +30,7 @@ fn main() -> Result<(), P2PError> {
     };
     let _inv_serialized = my_inventory.serialize();
 
-    let mut peer_store = PeerStore::new();
+    let peer_store = PeerStore::new().unwrap();
 
     let mut peer = Peer::connect_str("74.48.195.218")?.do_handshake()?;
 
@@ -72,16 +72,13 @@ fn main() -> Result<(), P2PError> {
                     let addresses = Addr::deserialize(&payload).unwrap();
 
                     for addr in addresses.ip_addresses {
-                        peer_store.add_peer(addr);
+                        peer_store.add_peer(addr).unwrap();
                     }
-
-                    peer_store.save();
                 }
                 PING => {
                     let command = PONG;
                     let mut payload: [u8; 8] = [0u8; 8];
-                    peer.stream
-                        .read_exact(&mut payload)?;
+                    peer.stream.read_exact(&mut payload)?;
                     let checksum = MsgHeader::calculate_checksum(&payload);
 
                     let pong = MsgHeader {
