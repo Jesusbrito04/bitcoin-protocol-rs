@@ -30,7 +30,7 @@ impl TryFrom<u32> for InvType {
             2 => Ok(InvType::MsgBlock),
             3 => Ok(InvType::MsgFilteredBlock),
             4 => Ok(InvType::MsgCmpctBlock),
-            _ => Err(P2PError::ParseError("Unknown Type".to_string())),
+            _ => Err(P2PError::Parse("Unknown Type".to_string())),
         }
     }
 }
@@ -51,14 +51,14 @@ impl InvMessage {
             let (item, rest) = bytes.split_at(36);
             bytes = rest;
             let inv_type = u32::from_le_bytes(item[0..4].try_into().map_err(|_| {
-                P2PError::ParseError(format!("Error while try to convert bytes into u32"))
+                P2PError::Parse(format!("Error while try to convert bytes into u32"))
             })?);
             let inv_hash = &item[4..];
             let inv_vec = InvVector {
                 inv_type: InvType::try_from(inv_type)?,
                 inv_hash: inv_hash
                     .try_into()
-                    .map_err(|e| P2PError::ParseError(format!("{}", e)))?,
+                    .map_err(|e| P2PError::Parse(format!("{}", e)))?,
             };
             entries.push(inv_vec);
         }

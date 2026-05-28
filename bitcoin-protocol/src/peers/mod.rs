@@ -5,6 +5,8 @@ use std::{
     io::{Read, Write},
 };
 
+pub mod peer;
+
 const PEERSTOREVERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
@@ -43,10 +45,7 @@ impl PeerStore {
     }
 
     pub fn load() -> Result<Self, P2PError> {
-        let mut file = match File::open("./peers.dat") {
-            Ok(f) => f,
-            Err(e) => return Err(e)?,
-        };
+        let mut file = File::open("./peers.dat")?;
         let mut buffer: Vec<u8> = Vec::new();
         file.read_to_end(&mut buffer)?;
         let mut cursor = &buffer[..];
@@ -54,14 +53,15 @@ impl PeerStore {
         let mut peers = HashSet::new();
 
         let (version, rest) = cursor.split_at(4);
+        let version: [u8; 4] = version.try_into()?;
         cursor = rest;
-        let peers_len = decode_compact_size(&mut cursor).map_err(|e| e)?;
+        let peers_len = decode_compact_size(&mut cursor)?;
         for _ in 0..peers_len {
-            let addr = IpAddress::deserialize(&mut cursor).unwrap();
+            let addr = IpAddress::deserialize(&mut cursor)?;
             peers.insert(addr);
         }
         Ok(PeerStore {
-            version: u32::from_le_bytes(version.try_into().unwrap()),
+            version: u32::from_le_bytes(version),
             peers,
         })
     }
