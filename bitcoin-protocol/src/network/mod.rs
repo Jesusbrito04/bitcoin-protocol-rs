@@ -28,6 +28,14 @@ pub const INV: [u8; 12] = [
     0x69, 0x6E, 0x76, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
+pub const GETDATA: [u8; 12] = [
+    0x67, 0x65, 0x74, 0x64, 0x61, 0x74, 0x61, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
+pub const BLOCK: [u8; 12] = [
+    0x62, 0x6C, 0x6F, 0x63, 0x6B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
 #[derive(Debug)]
 pub struct MsgHeader {
     pub magic: [u8; 4],
@@ -62,19 +70,19 @@ impl Serialize for MsgHeader {
         if bytes.len() < 24 {
             return Err(P2PError::NotEnoughBytesToSplit);
         }
-        let mut magic: [u8; 4] = [0u8; 4];
-        let mut command: [u8; 12] = [0u8; 12];
-        let payload_size: u32;
-        let mut checksum: [u8; 4] = [0u8; 4];
+        let (magic, rest) = bytes.split_at(4);
+        let magic = magic.try_into()?;
+        *bytes = rest;
+        let (command, rest) = bytes.split_at(12);
+        let command = command.try_into()?;
+        *bytes = rest;
+        let (payload_size, rest) = bytes.split_at(4);
+        let payload_size = u32::from_le_bytes(payload_size.try_into()?);
+        *bytes = rest;
+        let (checksum, rest) = bytes.split_at(4);
+        let checksum = checksum.try_into()?;
 
-        magic.copy_from_slice(&bytes[0..4]);
-        command.copy_from_slice(&bytes[4..16]);
-        payload_size = u32::from_le_bytes(
-            bytes[16..20]
-                .try_into()
-                .map_err(|e| P2PError::Parse(format!("Error decoding payload size: {}", e)))?,
-        );
-        checksum.copy_from_slice(&bytes[20..24]);
+        *bytes = rest;
 
         Ok(Self {
             magic,

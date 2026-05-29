@@ -1,8 +1,4 @@
-use std::{
-    array::TryFromSliceError,
-    fmt::Display,
-    io,
-};
+use std::{array::TryFromSliceError, fmt::Display, io};
 
 pub mod handshake;
 pub mod inventory;

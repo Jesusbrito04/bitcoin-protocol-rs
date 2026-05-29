@@ -1,6 +1,9 @@
 use bitcoin_protocol::{
-    inventory::{InvMessage, InvType, InvVector},
-    network::{Addr, MsgHeader, ADDR, INV, MAINNET, PING, PONG},
+    inventory::{
+        block::{Block},
+        InvMessage, InvType, InvVector,
+    },
+    network::{Addr, MsgHeader, ADDR, BLOCK, GETDATA, INV, MAINNET, PING, PONG},
     peers::{peer::Peer, PeerStore},
     P2PError, Serialize,
 };
@@ -33,6 +36,7 @@ fn main() -> Result<(), P2PError> {
     let peer_store = PeerStore::new()?;
 
     let mut peer = Peer::connect_str("74.48.195.218")?.do_handshake()?;
+
     peer.get_addr()?;
 
     loop {
@@ -94,15 +98,35 @@ fn main() -> Result<(), P2PError> {
                 }
 
                 INV => {
-                    let mut payload = vec![0; receive_header.payload_size as usize];
+                    let mut buffer_payload = vec![0; receive_header.payload_size as usize];
+                    peer.stream.read_exact(&mut buffer_payload)?;
+                    let inv = InvMessage::deserialize(&mut buffer_payload.as_ref());
+                    println!("Inventory {:?}", inv);
 
-                    peer.stream
-                        .read_exact(&mut payload)
-                        .expect("Error reading the payload");
+                    let get_data_payload = inv?.serialize();
 
-                    let inv = InvMessage::deserialize(&payload);
+                    let get_data_header = MsgHeader {
+                        magic: MAINNET,
+                        command: GETDATA,
+                        payload_size: get_data_payload.len() as u32,
+                        checksum: MsgHeader::calculate_checksum(&get_data_payload),
+                    };
 
-                    println!("Inventory {:?}", inv)
+                    let mut message: Vec<u8> =
+                        Vec::with_capacity(24 + get_data_header.payload_size as usize);
+                    message.extend_from_slice(&get_data_header.serialize());
+                    message.extend_from_slice(&get_data_payload);
+
+                    println!("message send: {:?}", message);
+
+                    peer.stream.write_all(&message)?;
+                }
+
+                BLOCK => {
+                    let mut buffer_payload = vec![0; receive_header.payload_size as usize];
+                    peer.stream.read_exact(&mut buffer_payload)?;
+                    let block = Block::deserialize(&mut buffer_payload.as_ref())?;
+                    println!("Block: {:?}", block)
                 }
                 _ => {
                     let mut payload = vec![0; receive_header.payload_size as usize];

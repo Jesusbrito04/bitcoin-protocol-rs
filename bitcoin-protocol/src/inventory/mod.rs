@@ -1,5 +1,7 @@
 use crate::{decode_compact_size, encode_compact_size, P2PError, Serialize};
 use std::convert::TryFrom;
+pub mod block;
+pub mod transaction;
 
 #[derive(Debug, Clone, Copy)]
 pub enum InvType {
