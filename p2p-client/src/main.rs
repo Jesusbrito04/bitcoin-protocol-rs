@@ -1,8 +1,5 @@
 use bitcoin_protocol::{
-    inventory::{
-        block::{Block},
-        InvMessage, InvType, InvVector,
-    },
+    inventory::{block::Block, InvMessage, InvType, InvVector},
     network::{Addr, MsgHeader, ADDR, BLOCK, GETDATA, INV, MAINNET, PING, PONG},
     peers::{peer::Peer, PeerStore},
     P2PError, Serialize,
