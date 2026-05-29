@@ -2,7 +2,7 @@ use bitcoin_protocol::{
     inventory::{InvMessage, InvType, InvVector},
     network::{Addr, MsgHeader, ADDR, INV, MAINNET, PING, PONG},
     peers::{peer::Peer, PeerStore},
-    P2PError,
+    P2PError, Serialize,
 };
 use std::io::{self, Read, Write};
 
@@ -30,16 +30,14 @@ fn main() -> Result<(), P2PError> {
     };
     let _inv_serialized = my_inventory.serialize();
 
-    let peer_store = PeerStore::new().unwrap();
+    let peer_store = PeerStore::new()?;
 
     let mut peer = Peer::connect_str("74.48.195.218")?.do_handshake()?;
-
     peer.get_addr()?;
 
     loop {
         let mut network_mainnet: [u8; 4] = [0u8; 4];
         if let Err(e) = peer.stream.read_exact(&mut network_mainnet) {
-            eprintln!("Error reading stream bytes: {}", e);
             if e.kind() == io::ErrorKind::UnexpectedEof {
                 return Err(P2PError::Custom(
                     "The connection has been close by the remote node".to_string(),
@@ -49,7 +47,7 @@ fn main() -> Result<(), P2PError> {
         }
         if network_mainnet == MAINNET {
             let mut header: [u8; 20] = [0u8; 20];
-            peer.stream.read_exact(&mut header).unwrap();
+            peer.stream.read_exact(&mut header)?;
 
             let mut network_command: [u8; 12] = [0u8; 12];
             network_command.copy_from_slice(&header[..12]);
@@ -68,11 +66,11 @@ fn main() -> Result<(), P2PError> {
             match receive_header.command {
                 ADDR => {
                     let mut payload = vec![0; receive_header.payload_size as usize];
-                    peer.stream.read_exact(&mut payload).unwrap();
-                    let addresses = Addr::deserialize(&payload).unwrap();
+                    peer.stream.read_exact(&mut payload)?;
+                    let addresses = Addr::deserialize(&mut payload.as_ref())?;
 
                     for addr in addresses.ip_addresses {
-                        peer_store.add_peer(addr).unwrap();
+                        peer_store.add_peer(addr)?;
                     }
                 }
                 PING => {
@@ -92,7 +90,7 @@ fn main() -> Result<(), P2PError> {
                     let mut message = Vec::new();
                     message.extend_from_slice(&pong);
                     message.extend_from_slice(&payload);
-                    peer.stream.write_all(&message).unwrap()
+                    peer.stream.write_all(&message)?
                 }
 
                 INV => {

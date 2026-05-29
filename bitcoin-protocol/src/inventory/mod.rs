@@ -1,4 +1,4 @@
-use crate::{decode_compact_size, encode_compact_size, P2PError};
+use crate::{decode_compact_size, encode_compact_size, P2PError, Serialize};
 use std::convert::TryFrom;
 
 #[derive(Debug, Clone, Copy)]
@@ -35,9 +35,10 @@ impl TryFrom<u32> for InvType {
     }
 }
 
-impl InvMessage {
-    pub fn deserialize(mut bytes: &[u8]) -> Result<Self, P2PError> {
-        let count = decode_compact_size(&mut bytes)?;
+impl Serialize for InvMessage {
+    type Value = Self;
+    fn deserialize(bytes: &mut &[u8]) -> Result<Self, P2PError> {
+        let count = decode_compact_size(bytes)?;
         if count > 50_000 {
             return Err(P2PError::OutOfRange);
         }
@@ -49,7 +50,7 @@ impl InvMessage {
         let mut entries: Vec<InvVector> = Vec::with_capacity(count as usize);
         for _ in 0..count {
             let (item, rest) = bytes.split_at(36);
-            bytes = rest;
+            *bytes = rest;
             let inv_type = u32::from_le_bytes(item[0..4].try_into().map_err(|_| {
                 P2PError::Parse(format!("Error while try to convert bytes into u32"))
             })?);
@@ -65,7 +66,7 @@ impl InvMessage {
         Ok(Self { inventory: entries })
     }
 
-    pub fn serialize(&self) -> Vec<u8> {
+    fn serialize(&self) -> Vec<u8> {
         let count = self.inventory.iter().count();
         let count_bytes = encode_compact_size(count);
         let mut buffer: Vec<u8> = Vec::with_capacity(count_bytes.len() + (count * 36));
