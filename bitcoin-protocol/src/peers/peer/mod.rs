@@ -1,7 +1,7 @@
 use crate::{
     handshake::VersionMessage,
     network::{IpAddress, MsgHeader, GETADDR, MAINNET, VERACK, VERSION},
-    P2PError,
+    P2PError, Serialize,
 };
 use std::{
     io::{Read, Write},
@@ -115,7 +115,7 @@ impl Peer<Handshake> {
         // Spect his Version-Message as a response.
         let mut buffer = [0u8; 24];
         self.stream.read_exact(&mut buffer)?;
-        let response_header = MsgHeader::deserialize(&buffer)?;
+        let response_header = MsgHeader::deserialize(&mut buffer.as_ref())?;
 
         if response_header.command != VERSION {
             return Err(P2PError::Custom(
@@ -126,7 +126,7 @@ impl Peer<Handshake> {
         // Read his Version-Message payload.
         let mut buffer = vec![0u8; response_header.payload_size as usize];
         self.stream.read_exact(&mut buffer)?;
-        let _response_payload = VersionMessage::deserialize(&buffer)?; // TODO: Verify version
+        let _response_payload = VersionMessage::deserialize(&mut buffer.as_ref())?; // TODO: Verify version
 
         // Build and send version-acknowledge
         let verack = MsgHeader {
@@ -141,7 +141,8 @@ impl Peer<Handshake> {
         // Spect his version-acknowledge as a response.
         let mut buffer = [0u8; 24];
         self.stream.read_exact(&mut buffer)?;
-        let _response_verack = MsgHeader::deserialize(&buffer).expect("Error reading the response");
+        let _response_verack =
+            MsgHeader::deserialize(&mut buffer.as_ref()).expect("Error reading the response");
         println!("got Verack.");
 
         Ok(Peer {

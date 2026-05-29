@@ -1,6 +1,6 @@
 //! The handshake is a step series to get a successful connection to a peer. !//
 
-use crate::{decode_compact_size, encode_compact_size, P2PError};
+use crate::{decode_compact_size, encode_compact_size, P2PError, Serialize};
 
 // The version message provides information about the transmitting node to the receiving node at the beginning of a connection.
 // until both peers have exchanged "version" messages. No other messages will be accepted.
@@ -23,8 +23,10 @@ pub struct VersionMessage {
     pub relay: bool,
 }
 
-impl VersionMessage {
-    pub fn serialize(&self) -> Vec<u8> {
+impl Serialize for VersionMessage {
+    type Value = Self;
+
+    fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(85);
         bytes.extend_from_slice(&self.version.to_le_bytes());
         bytes.extend_from_slice(&self.services.to_le_bytes());
@@ -46,7 +48,7 @@ impl VersionMessage {
         bytes
     }
 
-    pub fn deserialize(mut bytes: &[u8]) -> Result<Self, P2PError> {
+    fn deserialize(bytes: &mut &[u8]) -> Result<Self::Value, P2PError> {
         if bytes.len() < 4 + 8 + 8 {
             return Err(P2PError::Custom(
                 "Invalid Version Message length".to_string(),
@@ -64,7 +66,7 @@ impl VersionMessage {
             i64::from_le_bytes(bytes[12..20].try_into().map_err(|_| {
                 P2PError::Parse(format!("Error while try to convert bytes into i64"))
             })?);
-        bytes = &bytes[20..];
+        *bytes = &bytes[20..];
 
         if bytes.len() < 8 + 16 + 2 {
             return Err(P2PError::Custom(
@@ -82,7 +84,7 @@ impl VersionMessage {
             u16::from_be_bytes(bytes[24..26].try_into().map_err(|_| {
                 P2PError::Parse(format!("Error while try to convert bytes into u16"))
             })?);
-        bytes = &bytes[26..];
+        *bytes = &bytes[26..];
 
         if bytes.len() < 8 + 16 + 2 {
             return Err(P2PError::Custom(
@@ -100,7 +102,7 @@ impl VersionMessage {
             u16::from_be_bytes(bytes[24..26].try_into().map_err(|_| {
                 P2PError::Parse(format!("Error while try to convert bytes into u16"))
             })?);
-        bytes = &bytes[26..];
+        *bytes = &bytes[26..];
 
         if bytes.len() < 8 {
             return Err(P2PError::Custom(
@@ -111,9 +113,9 @@ impl VersionMessage {
             u64::from_le_bytes(bytes[0..8].try_into().map_err(|_| {
                 P2PError::Parse(format!("Error while try to convert bytes into u64"))
             })?);
-        bytes = &bytes[8..];
+        *bytes = &bytes[8..];
 
-        let user_agent_len = decode_compact_size(&mut bytes)? as usize;
+        let user_agent_len = decode_compact_size(bytes)? as usize;
         if bytes.len() < user_agent_len {
             return Err(P2PError::Custom(
                 "Invalid Version Message length".to_string(),
@@ -123,7 +125,7 @@ impl VersionMessage {
         let user_agent = String::from_utf8(ua_slice.to_vec()).map_err(|_| {
             P2PError::Parse(format!("Error while try to convert bytes into String"))
         })?;
-        bytes = rest;
+        *bytes = rest;
 
         if bytes.len() < 4 + 1 {
             return Err(P2PError::Custom(

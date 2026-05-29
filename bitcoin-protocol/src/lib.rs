@@ -1,9 +1,20 @@
-use std::{array::TryFromSliceError, fmt::Display, io};
+use std::{
+    array::TryFromSliceError,
+    fmt::Display,
+    io,
+};
 
 pub mod handshake;
 pub mod inventory;
 pub mod network;
 pub mod peers;
+
+pub trait Serialize {
+    type Value;
+    fn serialize(&self) -> Vec<u8>;
+
+    fn deserialize(bytes: &mut &[u8]) -> Result<Self::Value, P2PError>;
+}
 
 pub fn encode_compact_size(var: usize) -> Vec<u8> {
     if var < 253 {

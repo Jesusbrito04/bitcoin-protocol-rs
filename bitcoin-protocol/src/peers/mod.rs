@@ -1,4 +1,4 @@
-use crate::{network::IpAddress, P2PError};
+use crate::{network::IpAddress, P2PError, Serialize};
 use sled::{open, Db, IVec};
 
 pub mod peer;

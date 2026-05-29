@@ -1,7 +1,5 @@
-use crate::{decode_compact_size, encode_compact_size, P2PError};
+use crate::{decode_compact_size, encode_compact_size, P2PError, Serialize};
 use sha2::{Digest, Sha256};
-use std::net::Ipv6Addr;
-
 // Magic bytes indicating the originating network. They are by default little-endian bytes.
 pub const MAINNET: [u8; 4] = [0xf9, 0xbe, 0xb4, 0xd9];
 pub const TESTNET: [u8; 4] = [0x0b, 0x11, 0x09, 0x07];
@@ -39,7 +37,18 @@ pub struct MsgHeader {
 }
 
 impl MsgHeader {
-    pub fn serialize(&self) -> Vec<u8> {
+    pub fn calculate_checksum(payload: &[u8]) -> [u8; 4] {
+        let hash1 = Sha256::digest(payload);
+        let hash2 = Sha256::digest(hash1);
+        let mut checksum: [u8; 4] = [0u8; 4];
+        checksum.copy_from_slice(&hash2[..4]);
+        checksum
+    }
+}
+
+impl Serialize for MsgHeader {
+    type Value = Self;
+    fn serialize(&self) -> Vec<u8> {
         let mut buffer: Vec<u8> = Vec::with_capacity(24);
         buffer.extend_from_slice(&self.magic);
         buffer.extend_from_slice(&self.command);
@@ -48,7 +57,7 @@ impl MsgHeader {
         buffer
     }
 
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, P2PError> {
+    fn deserialize(bytes: &mut &[u8]) -> Result<Self, P2PError> {
         // The message header has a length of 24 bytes
         if bytes.len() < 24 {
             return Err(P2PError::NotEnoughBytesToSplit);
@@ -74,14 +83,6 @@ impl MsgHeader {
             checksum,
         })
     }
-
-    pub fn calculate_checksum(payload: &[u8]) -> [u8; 4] {
-        let hash1 = Sha256::digest(payload);
-        let hash2 = Sha256::digest(hash1);
-        let mut checksum: [u8; 4] = [0u8; 4];
-        checksum.copy_from_slice(&hash2[..4]);
-        checksum
-    }
 }
 
 pub struct Ping {
@@ -92,13 +93,14 @@ pub struct Pong {
     pub nonce: u64,
 }
 
-impl Ping {
-    pub fn serialize(&self) -> Vec<u8> {
+impl Serialize for Ping {
+    type Value = Self;
+    fn serialize(&self) -> Vec<u8> {
         let mut nonce = Vec::with_capacity(8);
         nonce.extend_from_slice(&self.nonce.to_le_bytes());
         nonce
     }
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, P2PError> {
+    fn deserialize(bytes: &mut &[u8]) -> Result<Self, P2PError> {
         let nonce =
             u64::from_le_bytes(bytes[..8].try_into().map_err(|_| {
                 P2PError::Parse(format!("Error while try to convert bytes into u64"))
@@ -107,14 +109,15 @@ impl Ping {
     }
 }
 
-impl Pong {
-    pub fn serialize(&self) -> Vec<u8> {
+impl Serialize for Pong {
+    type Value = Self;
+    fn serialize(&self) -> Vec<u8> {
         let mut nonce = Vec::with_capacity(8);
         nonce.extend_from_slice(&self.nonce.to_le_bytes());
         nonce
     }
 
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, P2PError> {
+    fn deserialize(bytes: &mut &[u8]) -> Result<Self, P2PError> {
         let nonce =
             u64::from_le_bytes(bytes[..8].try_into().map_err(|_| {
                 P2PError::Parse(format!("Error while try to convert bytes into u64"))
@@ -128,8 +131,9 @@ pub struct Addr {
     pub ip_addresses: Vec<IpAddress>,
 }
 
-impl Addr {
-    pub fn serialize(&self) -> Vec<u8> {
+impl Serialize for Addr {
+    type Value = Self;
+    fn serialize(&self) -> Vec<u8> {
         let ip_count = encode_compact_size(self.ip_addresses.len());
         let mut buffer: Vec<u8> =
             Vec::with_capacity(ip_count.len() + (self.ip_addresses.len() * 30));
@@ -140,11 +144,11 @@ impl Addr {
         buffer
     }
 
-    pub fn deserialize(mut bytes: &[u8]) -> Result<Self, P2PError> {
-        let ip_count = decode_compact_size(&mut bytes)?;
+    fn deserialize(bytes: &mut &[u8]) -> Result<Self, P2PError> {
+        let ip_count = decode_compact_size(bytes)?;
         let mut ip_addresses: Vec<IpAddress> = Vec::with_capacity(ip_count as usize);
         for _ in 0..ip_count {
-            let address = IpAddress::deserialize(&mut bytes)?;
+            let address = IpAddress::deserialize(bytes)?;
             ip_addresses.push(address);
         }
         Ok(Self { ip_addresses })
@@ -159,8 +163,9 @@ pub struct IpAddress {
     pub port: u16,
 }
 
-impl IpAddress {
-    pub fn serialize(&self) -> Vec<u8> {
+impl Serialize for IpAddress {
+    type Value = Self;
+    fn serialize(&self) -> Vec<u8> {
         let mut buffer: Vec<u8> = Vec::with_capacity(30);
         buffer.extend_from_slice(&self.time.to_le_bytes());
         buffer.extend_from_slice(&self.service.to_le_bytes());
@@ -169,7 +174,7 @@ impl IpAddress {
         buffer
     }
 
-    pub fn deserialize(bytes: &mut &[u8]) -> Result<Self, P2PError> {
+    fn deserialize(bytes: &mut &[u8]) -> Result<Self, P2PError> {
         let (time, rest) = bytes.split_at(4);
         let time =
             u32::from_le_bytes(time.try_into().map_err(|_| {
