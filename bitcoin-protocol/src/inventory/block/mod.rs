@@ -3,18 +3,18 @@ use crate::{decode_compact_size, encode_compact_size, Serialize};
 use super::transaction::Transaction;
 #[derive(Debug)]
 pub struct BlockHeader {
-    version: u32,
-    p_block: [u8; 32],
-    merkle_root: [u8; 32],
-    timestamp: u32,
-    target: u32,
-    nonce: u32,
+    pub version: u32,
+    pub p_block: [u8; 32],
+    pub merkle_root: [u8; 32],
+    pub timestamp: u32,
+    pub target: u32,
+    pub nonce: u32,
 }
 
 #[derive(Debug)]
 pub struct Block {
-    header: BlockHeader,
-    transactions: Vec<Transaction>,
+    pub header: BlockHeader,
+    pub transactions: Vec<Transaction>,
 }
 
 impl Serialize for BlockHeader {

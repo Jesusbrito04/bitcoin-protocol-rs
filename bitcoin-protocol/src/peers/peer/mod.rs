@@ -1,12 +1,18 @@
 use crate::{
     handshake::VersionMessage,
-    network::{IpAddress, MsgHeader, GETADDR, MAINNET, VERACK, VERSION},
+    inventory::{block::Block, InvMessage},
+    network::{
+        Addr, IpAddress, MsgHeader, ADDR, BLOCK, GETADDR, GETDATA, INV, MAINNET, PING, PONG,
+        VERACK, VERSION,
+    },
+    peers::PeerStore,
     P2PError, Serialize,
 };
 use std::{
-    io::{Read, Write},
+    io::{self, Read, Write},
     marker::PhantomData,
     net::{IpAddr, SocketAddr, TcpStream},
+    sync::Arc,
     time::SystemTime,
 };
 
@@ -165,5 +171,98 @@ impl Peer<Connected> {
 
         self.stream.write_all(getaddr)?;
         Ok(())
+    }
+
+    pub fn run(&mut self, store: Arc<PeerStore>) -> Result<(), P2PError> {
+        loop {
+            let mut network_mainnet: [u8; 4] = [0u8; 4];
+            if let Err(e) = self.stream.read_exact(&mut network_mainnet) {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    return Err(P2PError::Custom(
+                        "The connection has been close by the remote node".to_string(),
+                    ));
+                }
+                continue;
+            }
+            if network_mainnet == MAINNET {
+                let mut header: [u8; 20] = [0u8; 20];
+                self.stream.read_exact(&mut header)?;
+
+                let mut network_command: [u8; 12] = [0u8; 12];
+                network_command.copy_from_slice(&header[..12]);
+                let mut payload_size: [u8; 4] = [0u8; 4];
+                payload_size.copy_from_slice(&header[12..16]);
+                let mut checksum: [u8; 4] = [0u8; 4];
+                checksum.copy_from_slice(&header[16..20]);
+
+                let receive_header = MsgHeader {
+                    magic: network_mainnet,
+                    command: network_command,
+                    payload_size: u32::from_le_bytes(payload_size),
+                    checksum,
+                };
+
+                match receive_header.command {
+                    ADDR => {
+                        let mut payload = vec![0; receive_header.payload_size as usize];
+                        self.stream.read_exact(&mut payload)?;
+                        let addresses = Addr::deserialize(&mut payload.as_ref())?;
+                        for addr in addresses.ip_addresses {
+                            store.add_peer(addr)?;
+                        }
+                    }
+                    PING => {
+                        let command = PONG;
+                        let mut payload: [u8; 8] = [0u8; 8];
+                        self.stream.read_exact(&mut payload)?;
+                        let checksum = MsgHeader::calculate_checksum(&payload);
+                        let pong = MsgHeader {
+                            magic: receive_header.magic,
+                            command,
+                            payload_size: 8,
+                            checksum,
+                        }
+                        .serialize();
+                        println!("ping");
+                        let mut message = Vec::new();
+                        message.extend_from_slice(&pong);
+                        message.extend_from_slice(&payload);
+                        self.stream.write_all(&message)?
+                    }
+                    INV => {
+                        let mut buffer_payload = vec![0; receive_header.payload_size as usize];
+                        self.stream.read_exact(&mut buffer_payload)?;
+                        let inv = InvMessage::deserialize(&mut buffer_payload.as_ref());
+                        let get_data_payload = inv?.serialize();
+                        let get_data_header = MsgHeader {
+                            magic: MAINNET,
+                            command: GETDATA,
+                            payload_size: get_data_payload.len() as u32,
+                            checksum: MsgHeader::calculate_checksum(&get_data_payload),
+                        };
+                        let mut message: Vec<u8> =
+                            Vec::with_capacity(24 + get_data_header.payload_size as usize);
+                        message.extend_from_slice(&get_data_header.serialize());
+                        message.extend_from_slice(&get_data_payload);
+                        self.stream.write_all(&message)?;
+                    }
+                    BLOCK => {
+                        let mut buffer_payload = vec![0; receive_header.payload_size as usize];
+                        self.stream.read_exact(&mut buffer_payload)?;
+                        let block = Block::deserialize(&mut buffer_payload.as_ref())?;
+                    }
+                    _ => {
+                        let mut payload = vec![0; receive_header.payload_size as usize];
+                        self.stream
+                            .read_exact(&mut payload)
+                            .expect("Error reading the payload");
+                        println!(
+                            "payload: {:?}",
+                            String::from_utf8_lossy(&receive_header.command)
+                        )
+                    }
+                }
+            }
+        }
     }
 }

@@ -2,6 +2,8 @@ use crate::{network::IpAddress, P2PError, Serialize};
 use sled::{open, Db, IVec};
 
 pub mod peer;
+pub use peer::Peer;
+pub mod manager;
 
 const CURRENT_DB_VERSION: u32 = 1;
 const BASE_PATH: &str = "./bitcoin-protocol/src/peers/db";
