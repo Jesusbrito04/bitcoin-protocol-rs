@@ -1,4 +1,8 @@
-use crate::{decode_compact_size, encode_compact_size, P2PError, Serialize};
+use crate::{
+    decode_compact_size, encode_compact_size,
+    inventory::InvType::{MsgBlock, MsgTx, MsgWitnessBlock, MsgWitnessTx},
+    P2PError, Serialize,
+};
 use std::convert::TryFrom;
 pub mod block;
 pub mod transaction;
@@ -10,6 +14,9 @@ pub enum InvType {
     MsgBlock = 2,
     MsgFilteredBlock = 3,
     MsgCmpctBlock = 4,
+    MsgWitnessTx = 0x40000001,
+    MsgWitnessBlock = 0x40000002,
+    MsgFilteredWitnessBlock = 0x40000003,
 }
 #[derive(Debug, Clone)]
 pub struct InvVector {
@@ -32,6 +39,9 @@ impl TryFrom<u32> for InvType {
             2 => Ok(InvType::MsgBlock),
             3 => Ok(InvType::MsgFilteredBlock),
             4 => Ok(InvType::MsgCmpctBlock),
+            0x40000001 => Ok(InvType::MsgWitnessTx),
+            0x40000002 => Ok(InvType::MsgWitnessBlock),
+            0x40000003 => Ok(InvType::MsgFilteredWitnessBlock),
             _ => Err(P2PError::Parse("Unknown Type".to_string())),
         }
     }
@@ -53,15 +63,18 @@ impl Serialize for InvMessage {
         for _ in 0..count {
             let (item, rest) = bytes.split_at(36);
             *bytes = rest;
-            let inv_type = u32::from_le_bytes(item[0..4].try_into().map_err(|_| {
-                P2PError::Parse(format!("Error while try to convert bytes into u32"))
-            })?);
+
+            let type_num = u32::from_le_bytes(item[0..4].try_into()?);
+            let inv_type = match type_num.try_into()? {
+                MsgTx => MsgWitnessTx,
+                MsgBlock => MsgWitnessBlock,
+                inv_type => inv_type,
+            };
+
             let inv_hash = &item[4..];
             let inv_vec = InvVector {
-                inv_type: InvType::try_from(inv_type)?,
-                inv_hash: inv_hash
-                    .try_into()
-                    .map_err(|e| P2PError::Parse(format!("{}", e)))?,
+                inv_type,
+                inv_hash: inv_hash.try_into()?,
             };
             entries.push(inv_vec);
         }
