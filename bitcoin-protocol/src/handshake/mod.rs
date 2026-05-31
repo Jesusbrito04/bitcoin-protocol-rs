@@ -1,5 +1,7 @@
 //! The handshake is a step series to get a successful connection to a peer. !//
 
+use std::net::Ipv6Addr;
+
 use crate::{decode_compact_size, encode_compact_size, P2PError, Serialize};
 
 // The version message provides information about the transmitting node to the receiving node at the beginning of a connection.
@@ -15,7 +17,7 @@ pub struct VersionMessage {
     pub addr_recv_ip: [u8; 16],
     pub addr_recv_port: u16,
     pub addr_trans_service: u64,
-    pub addr_trans_ip: [u8; 16],
+    pub addr_trans_ip: Ipv6Addr,
     pub addr_trans_port: u16,
     pub nonce: u64,
     pub user_agent: String,
@@ -35,7 +37,7 @@ impl Serialize for VersionMessage {
         bytes.extend_from_slice(&self.addr_recv_ip);
         bytes.extend_from_slice(&self.addr_recv_port.to_be_bytes());
         bytes.extend_from_slice(&self.addr_trans_service.to_le_bytes());
-        bytes.extend_from_slice(&self.addr_trans_ip);
+        bytes.extend_from_slice(&self.addr_trans_ip.octets());
         bytes.extend_from_slice(&self.addr_trans_port.to_be_bytes());
         bytes.extend_from_slice(&self.nonce.to_le_bytes());
 
@@ -95,9 +97,7 @@ impl Serialize for VersionMessage {
             u64::from_le_bytes(bytes[0..8].try_into().map_err(|_| {
                 P2PError::Parse(format!("Error while try to convert bytes into u64"))
             })?);
-        let addr_trans_ip: [u8; 16] = bytes[8..24]
-            .try_into()
-            .map_err(|err| P2PError::Parse(format!("{}", err)))?;
+        let addr_trans_ip: Ipv6Addr = Ipv6Addr::from_octets(bytes[8..24].try_into().unwrap());
         let addr_trans_port =
             u16::from_be_bytes(bytes[24..26].try_into().map_err(|_| {
                 P2PError::Parse(format!("Error while try to convert bytes into u16"))

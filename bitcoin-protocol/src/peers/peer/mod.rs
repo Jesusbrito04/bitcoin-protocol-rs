@@ -1,8 +1,8 @@
 use crate::{
     handshake::VersionMessage,
-    inventory::{block::Block, InvMessage},
+    inventory::{block::Block, transaction::Transaction, InvMessage},
     network::{
-        Addr, IpAddress, MsgHeader, ADDR, BLOCK, GETADDR, GETDATA, INV, MAINNET, PING, PONG,
+        Addr, IpAddress, MsgHeader, ADDR, BLOCK, GETADDR, GETDATA, INV, MAINNET, PING, PONG, TX,
         VERACK, VERSION,
     },
     peers::PeerStore,
@@ -11,9 +11,10 @@ use crate::{
 use std::{
     io::{self, Read, Write},
     marker::PhantomData,
-    net::{IpAddr, SocketAddr, TcpStream},
+    net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
+    str::FromStr,
     sync::Arc,
-    time::SystemTime,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Debug)]
@@ -83,19 +84,26 @@ impl Peer<Disconnected> {
 impl Peer<Handshake> {
     pub fn do_handshake(mut self) -> Result<Peer<Connected>, P2PError> {
         // Build the Version-Message payload (identify my node).
+        let time: i64 = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .try_into()
+            .unwrap();
+        let my_ip = Ipv4Addr::from_str("127.0.0.1").unwrap().to_ipv6_mapped();
         let version_serialize = VersionMessage {
-            version: 60002,
-            services: 1,
-            timestamp: 1355854353,
-            addr_recv_service: 1,
-            addr_recv_ip: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            addr_recv_port: 8333,
-            addr_trans_service: 2,
-            addr_trans_ip: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            version: 70015,
+            services: 9,
+            timestamp: time,
+            addr_recv_service: 9,
+            addr_recv_ip: self.peer.ip,
+            addr_recv_port: self.peer.port,
+            addr_trans_service: 9,
+            addr_trans_ip: my_ip,
             addr_trans_port: 8333,
             nonce: 232832832,
             user_agent: "/Jesus:0.1.0/".to_string(),
-            start_height: 212672,
+            start_height: 0,
             relay: false,
         }
         .serialize();
@@ -174,6 +182,7 @@ impl Peer<Connected> {
     }
 
     pub fn run(&mut self, store: Arc<PeerStore>) -> Result<(), P2PError> {
+        self.get_addr()?;
         loop {
             let mut network_mainnet: [u8; 4] = [0u8; 4];
             if let Err(e) = self.stream.read_exact(&mut network_mainnet) {
@@ -250,6 +259,13 @@ impl Peer<Connected> {
                         let mut buffer_payload = vec![0; receive_header.payload_size as usize];
                         self.stream.read_exact(&mut buffer_payload)?;
                         let block = Block::deserialize(&mut buffer_payload.as_ref())?;
+                    }
+                    TX => {
+                        let mut buffer_payload: Vec<u8> =
+                            vec![0u8; receive_header.payload_size as usize];
+                        self.stream.read_exact(&mut buffer_payload)?;
+                        let tx = Transaction::deserialize(&mut buffer_payload.as_slice())?;
+                        println!("{:?}", tx)
                     }
                     _ => {
                         let mut payload = vec![0; receive_header.payload_size as usize];

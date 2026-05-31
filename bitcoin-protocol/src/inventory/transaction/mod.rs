@@ -2,9 +2,8 @@ use crate::{decode_compact_size, encode_compact_size, Serialize};
 
 #[derive(Debug)]
 pub struct Transaction {
-    is_segwit: bool,
     version: u32,
-    market_flag: Option<u16>,
+    marker_flag: Option<u16>,
     inputs: Vec<Input>,
     outputs: Vec<Output>,
     witnesses: Option<Vec<Vec<WitnessItem>>>,
@@ -17,8 +16,8 @@ impl Serialize for Transaction {
         let mut buffer = Vec::new();
         buffer.extend_from_slice(&self.version.to_le_bytes());
 
-        if self.is_segwit && self.market_flag.is_some() {
-            buffer.extend_from_slice(&self.market_flag.unwrap().to_le_bytes());
+        if self.marker_flag.is_some() {
+            buffer.extend_from_slice(&self.marker_flag.unwrap().to_le_bytes());
         }
 
         let cmpct_size_txin = encode_compact_size(self.inputs.len() as usize);
@@ -33,7 +32,7 @@ impl Serialize for Transaction {
             buffer.extend_from_slice(&output.serialize());
         }
 
-        if self.is_segwit {
+        if self.marker_flag.is_some() {
             if let Some(witnesses) = &self.witnesses {
                 for witness_items in witnesses {
                     let cmpct_size_witnesses = encode_compact_size(witness_items.len() as usize);
@@ -54,15 +53,13 @@ impl Serialize for Transaction {
         let (version, rest) = bytes.split_at(4);
         let version = u32::from_le_bytes(version.try_into()?);
         *bytes = rest;
-        let mut market_flag = None;
-
+        let mut marker_flag = None;
         if bytes[0] == 0x00 {
             let (market, rest) = bytes.split_at(2);
-            market_flag = Some(u16::from_le_bytes(market.try_into()?));
+            marker_flag = Some(u16::from_le_bytes(market.try_into()?));
             *bytes = rest;
             is_segwit = true
         }
-
         let mut inputs: Vec<Input> = Vec::new();
         let input_count = decode_compact_size(bytes)?;
         for _ in 0..input_count {
@@ -99,9 +96,8 @@ impl Serialize for Transaction {
         *bytes = rest;
 
         Ok(Self {
-            is_segwit,
             version,
-            market_flag,
+            marker_flag,
             inputs,
             outputs,
             witnesses,

@@ -4,10 +4,7 @@ use crate::{
 };
 use std::{
     net::{IpAddr, SocketAddr},
-    sync::{
-        mpsc::{Sender},
-        Arc,
-    },
+    sync::{mpsc::Sender, Arc},
     thread::{self, JoinHandle},
 };
 
@@ -35,7 +32,8 @@ impl PeersManager {
                     let mut peer: Peer<crate::peers::peer::Connected> =
                         Peer::connect_str(&socketaddr.to_string())?.do_handshake()?;
                     sender
-                        .send(format!("Connected correclty with peer: {:#?}", peer)).unwrap();
+                        .send(format!("Connected correclty with peer: {:#?}", peer.peer))
+                        .unwrap();
                     peer.run(store)?;
                     Ok(())
                 });
