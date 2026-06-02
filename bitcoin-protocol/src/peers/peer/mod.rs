@@ -232,10 +232,11 @@ impl Peer<Connected> {
                             checksum,
                         }
                         .serialize();
-                        println!("ping");
+                        println!("Received ping");
                         let mut message = Vec::new();
                         message.extend_from_slice(&pong);
                         message.extend_from_slice(&payload);
+                        println!("Sending pong");
                         self.stream.write_all(&message)?
                     }
                     INV => {
@@ -265,7 +266,7 @@ impl Peer<Connected> {
                             vec![0u8; receive_header.payload_size as usize];
                         self.stream.read_exact(&mut buffer_payload)?;
                         let tx = Transaction::deserialize(&mut buffer_payload.as_slice())?;
-                        println!("{:?}", tx)
+                        println!("Tx{}", tx)
                     }
                     _ => {
                         let mut payload = vec![0; receive_header.payload_size as usize];

@@ -1,23 +1,85 @@
+use std::fmt::Display;
+
 use crate::{decode_compact_size, encode_compact_size, Serialize};
 
 #[derive(Debug)]
 pub struct Transaction {
     version: u32,
-    marker_flag: Option<u16>,
+    marker_flag: Option<(u8, u8)>,
     inputs: Vec<Input>,
     outputs: Vec<Output>,
-    witnesses: Option<Vec<Vec<WitnessItem>>>,
+    witnesses: Option<Vec<Witness>>,
     locktime: u32,
+}
+
+impl Transaction {
+    pub fn from_hex(raw_tx: String) -> Transaction {
+        let raw_bytes = hex::decode(raw_tx).unwrap();
+        Transaction::deserialize(&mut raw_bytes.as_slice()).unwrap()
+    }
+}
+
+impl Display for Transaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let version = self.version;
+        let marker_flag = self.marker_flag.is_some();
+        let inputs = &self.inputs;
+        let outputs = &self.outputs;
+
+        let locktime = self.locktime;
+        write!(f, "\n")?;
+        writeln!(f, "{{")?;
+        write!(f, "   \"version\": \"{}\",\n", version)?;
+        if marker_flag {
+            let (marker, flag) = self.marker_flag.unwrap();
+            write!(f, "   \"marker\": \"{}\",\n", marker)?;
+            write!(f, "   \"flag\": \"{}\",\n", flag)?;
+        };
+        
+        write!(f, "   \"inputCount\": \"{}\",\n", inputs.len())?;
+        write!(f, "   \"inputs\": [")?;
+        for (i, input) in inputs.iter().enumerate() {
+            write!(f, "{{ {} }}", input)?;
+            if i < inputs.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "]\n")?;
+        write!(f, "   \"outputsCount\": \"{}\",\n", outputs.len())?;
+        write!(f, "   \"outputs\": [")?;
+        for (i, output) in outputs.iter().enumerate() {
+            write!(f, "{{ {} }}", output)?;
+            if i < outputs.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "]\n")?;
+        if let Some(witnesses) = self.witnesses.as_ref() {
+                 write!(f, "   \"witnessesCount\": \"{}\",\n", witnesses.len())?;
+                 for (i, witness) in witnesses.iter().enumerate() {
+                     write!(f, "{}", witness)?;
+                     if i < witnesses.len() - 1 {
+                         write!(f, ", ")?;
+                    }
+                }
+                write!(f, " ]\n")?;
+            }
+        write!(f, "   \"locktime\": \"{}\"\n", locktime)?;
+        writeln!(f, "}}")
+    }
 }
 
 impl Serialize for Transaction {
     type Value = Self;
     fn serialize(&self) -> Vec<u8> {
+        let segwit = self.marker_flag.is_some();
         let mut buffer = Vec::new();
         buffer.extend_from_slice(&self.version.to_le_bytes());
 
-        if self.marker_flag.is_some() {
-            buffer.extend_from_slice(&self.marker_flag.unwrap().to_le_bytes());
+        if segwit {
+            let (marker, flag) = self.marker_flag.unwrap();
+            buffer.push(marker);
+            buffer.push(flag);
         }
 
         let cmpct_size_txin = encode_compact_size(self.inputs.len() as usize);
@@ -32,12 +94,13 @@ impl Serialize for Transaction {
             buffer.extend_from_slice(&output.serialize());
         }
 
-        if self.marker_flag.is_some() {
+        if segwit {
             if let Some(witnesses) = &self.witnesses {
                 for witness_items in witnesses {
-                    let cmpct_size_witnesses = encode_compact_size(witness_items.len() as usize);
+                    let cmpct_size_witnesses =
+                        encode_compact_size(witness_items.witness.len() as usize);
                     buffer.extend_from_slice(&cmpct_size_witnesses);
-                    for witness in witness_items {
+                    for witness in &witness_items.witness {
                         buffer.extend_from_slice(&witness.serialize());
                     }
                 }
@@ -49,16 +112,15 @@ impl Serialize for Transaction {
         buffer
     }
     fn deserialize(bytes: &mut &[u8]) -> Result<Self::Value, crate::P2PError> {
-        let mut is_segwit: bool = false;
         let (version, rest) = bytes.split_at(4);
         let version = u32::from_le_bytes(version.try_into()?);
         *bytes = rest;
         let mut marker_flag = None;
         if bytes[0] == 0x00 {
-            let (market, rest) = bytes.split_at(2);
-            marker_flag = Some(u16::from_le_bytes(market.try_into()?));
+            let (marker, rest) = bytes.split_at(2);
+            let (m, f) = marker.split_first().unwrap();
+            marker_flag = Some((*m, f[0]));
             *bytes = rest;
-            is_segwit = true
         }
         let mut inputs: Vec<Input> = Vec::new();
         let input_count = decode_compact_size(bytes)?;
@@ -74,18 +136,20 @@ impl Serialize for Transaction {
             outputs.push(output);
         }
 
-        let mut witnesses: Option<Vec<Vec<WitnessItem>>> = None;
+        let mut witnesses: Option<Vec<Witness>> = None;
 
-        if is_segwit {
+        if marker_flag.is_some() {
             let mut all_witnesses = Vec::new();
             for _ in 0..inputs.len() {
-                let mut witness_items: Vec<WitnessItem> = Vec::new();
+                let mut witness = Witness {
+                    witness: Vec::new(),
+                };
                 let witness_count = decode_compact_size(bytes)?;
                 for _ in 0..witness_count {
-                    let witness = WitnessItem::deserialize(bytes)?;
-                    witness_items.push(witness);
+                    let witnessitem = WitnessStack::deserialize(bytes)?;
+                    witness.witness.push(witnessitem);
                 }
-                all_witnesses.push(witness_items)
+                all_witnesses.push(witness)
             }
             witnesses = Some(all_witnesses);
         }
@@ -112,6 +176,26 @@ pub struct Input {
     vout: u32,
     script_sig: Vec<u8>,
     sequence: u32,
+}
+
+impl Display for Input {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let txid = hex::encode(self.txid);
+        let script_sig = hex::encode(&self.script_sig);
+        write!(f, "txid: {}, ", txid)?;
+        write!(f, "vout: {}, ", self.vout)?;
+        write!(
+            f,
+            "scriptsigsize: {:x}, ",
+            script_sig.len()
+        )?;
+        if script_sig.len() == 0 {
+            write!(f, "scriptsig: [], ")?;
+        } else {
+            write!(f, "scriptsig: {}, ", script_sig)?;
+        }
+        write!(f, "sequence: {} ", self.sequence)
+    }
 }
 
 impl Serialize for Input {
@@ -159,6 +243,16 @@ pub struct Output {
     script_pubkey: Vec<u8>,
 }
 
+impl Display for Output {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let script_pubkey = hex::encode(&self.script_pubkey);
+        let script_pubkey_size = self.script_pubkey.len();
+        write!(f, "amount: {} ", self.amount)?;
+        write!(f, "scriptPubKeySize: {:x} ", script_pubkey_size)?;
+        write!(f, "scriptPubKey: {} ", script_pubkey)
+    }
+}
+
 impl Serialize for Output {
     type Value = Self;
     fn serialize(&self) -> Vec<u8> {
@@ -188,11 +282,38 @@ impl Serialize for Output {
 }
 
 #[derive(Debug, Clone)]
-pub struct WitnessItem {
-    item: Vec<u8>,
+pub struct Witness {
+    pub witness: Vec<WitnessStack>,
+}
+#[derive(Debug, Clone)]
+pub struct WitnessStack {
+    pub item: Vec<u8>,
 }
 
-impl Serialize for WitnessItem {
+impl Display for Witness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let witness = &self.witness;
+        write!(f, "   \"witness\": [ ")?;
+        for (i, witness_stack) in witness.iter().enumerate() {
+            write!(f, "{}", witness_stack)?;
+            if i < witness.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Display for WitnessStack {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let witness = hex::encode(&self.item);
+        let item_len = self.item.len();
+        write!(f, "\"size\": {:x}, ", item_len)?;
+        write!(f, "\"item\": {}", witness)
+    }
+}
+
+impl Serialize for WitnessStack {
     type Value = Self;
     fn serialize(&self) -> Vec<u8> {
         let mut buffer = Vec::new();
