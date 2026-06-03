@@ -1,12 +1,7 @@
 use crate::{
-    handshake::VersionMessage,
-    inventory::{block::Block, transaction::Transaction, InvMessage},
-    network::{
-        Addr, IpAddress, MsgHeader, ADDR, BLOCK, GETADDR, GETDATA, INV, MAINNET, PING, PONG, TX,
-        VERACK, VERSION,
-    },
-    peers::PeerStore,
-    P2PError, Serialize,
+    P2PError, Serialize, handshake::VersionMessage, inventory::{InvMessage, block::{Block, BlockLocator, GetHeadersMessage, Headers}, transaction::Transaction}, network::{
+        ADDR, Addr, BLOCK, GETADDR, GETDATA, GETHEADERS, HEADERS, INV, IpAddress, MAINNET, MsgHeader, PING, PONG, TX, VERACK, VERSION
+    }, peers::PeerStore
 };
 use std::{
     io::{self, Read, Write},
@@ -183,6 +178,29 @@ impl Peer<Connected> {
 
     pub fn run(&mut self, store: Arc<PeerStore>) -> Result<(), P2PError> {
         self.get_addr()?;
+        let genesis_block = hex::decode("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f").unwrap().try_into().unwrap();
+        let blocklocator = BlockLocator {
+            hashes: vec![ genesis_block ]
+        };
+
+        let getheaderspayload = GetHeadersMessage {
+            version: 70015,
+            locator: blocklocator,
+            hash_stop: [0x00; 32]
+        };
+
+        let getheaders = MsgHeader {
+            magic: MAINNET,
+            command: GETHEADERS,
+            payload_size: getheaderspayload.serialize().len() as u32,
+            checksum: MsgHeader::calculate_checksum(&getheaderspayload.serialize())
+        };
+
+        let mut message = Vec::new();
+        message.extend_from_slice(&getheaders.serialize());
+        message.extend_from_slice(&getheaderspayload.serialize());
+        self.stream.write_all(&message)?;
+
         loop {
             let mut network_mainnet: [u8; 4] = [0u8; 4];
             if let Err(e) = self.stream.read_exact(&mut network_mainnet) {
@@ -267,6 +285,12 @@ impl Peer<Connected> {
                         self.stream.read_exact(&mut buffer_payload)?;
                         let tx = Transaction::deserialize(&mut buffer_payload.as_slice())?;
                         println!("Tx{}", tx)
+                    },
+                    HEADERS => {
+                        let mut buffer_payload = vec![0u8; receive_header.payload_size as usize];
+                        self.stream.read_exact(&mut buffer_payload)?;
+                        let headers = Headers::deserialize(&mut buffer_payload.as_slice())?;
+                        println!("Headers: {:?}", headers)
                     }
                     _ => {
                         let mut payload = vec![0; receive_header.payload_size as usize];

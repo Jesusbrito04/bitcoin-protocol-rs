@@ -35,7 +35,7 @@ impl Display for Transaction {
             write!(f, "   \"marker\": \"{}\",\n", marker)?;
             write!(f, "   \"flag\": \"{}\",\n", flag)?;
         };
-        
+
         write!(f, "   \"inputCount\": \"{}\",\n", inputs.len())?;
         write!(f, "   \"inputs\": [")?;
         for (i, input) in inputs.iter().enumerate() {
@@ -55,15 +55,15 @@ impl Display for Transaction {
         }
         write!(f, "]\n")?;
         if let Some(witnesses) = self.witnesses.as_ref() {
-                 write!(f, "   \"witnessesCount\": \"{}\",\n", witnesses.len())?;
-                 for (i, witness) in witnesses.iter().enumerate() {
-                     write!(f, "{}", witness)?;
-                     if i < witnesses.len() - 1 {
-                         write!(f, ", ")?;
-                    }
+            write!(f, "   \"witnessesCount\": \"{}\",\n", witnesses.len())?;
+            for (i, witness) in witnesses.iter().enumerate() {
+                write!(f, "{}", witness)?;
+                if i < witnesses.len() - 1 {
+                    write!(f, ", ")?;
                 }
-                write!(f, " ]\n")?;
             }
+            write!(f, " ]\n")?;
+        }
         write!(f, "   \"locktime\": \"{}\"\n", locktime)?;
         writeln!(f, "}}")
     }
@@ -184,11 +184,7 @@ impl Display for Input {
         let script_sig = hex::encode(&self.script_sig);
         write!(f, "txid: {}, ", txid)?;
         write!(f, "vout: {}, ", self.vout)?;
-        write!(
-            f,
-            "scriptsigsize: {:x}, ",
-            script_sig.len()
-        )?;
+        write!(f, "scriptsigsize: {:x}, ", script_sig.len())?;
         if script_sig.len() == 0 {
             write!(f, "scriptsig: [], ")?;
         } else {
