@@ -1,4 +1,8 @@
-use crate::{decode_compact_size, encode_compact_size, P2PError, Serialize};
+use crypto_bigint::U256;
+
+use crate::{
+    decode_compact_size, encode_compact_size, index::store::StoredData, P2PError, Serialize,
+};
 
 use super::transaction::Transaction;
 #[derive(Debug)]
@@ -7,8 +11,35 @@ pub struct BlockHeader {
     pub prev_block: [u8; 32],
     pub merkle_root: [u8; 32],
     pub timestamp: u32,
-    pub target: u32,
+    pub nbits: u32,
     pub nonce: u32,
+}
+
+impl BlockHeader {
+    pub fn get_target(&self) -> U256 {
+        let exponent = self.nbits >> 24;
+        let coefficient = U256::from_u32(self.nbits & 0x00ffffff);
+        if exponent >= 3 {
+            let shift = 8 * (exponent - 3);
+            return coefficient << shift;
+        } else {
+            let shift = 8 * (3 - exponent);
+            return coefficient >> shift;
+        }
+    }
+
+    pub fn get_chainwork(&self) -> U256 {
+        let target = self.get_target().wrapping_add(&U256::ONE);
+        let max = U256::MAX;
+        let (quotient, remainder) = max.div_rem(&target.to_nz().expect("Can't divide by Zero"));
+        let remainder = remainder.wrapping_add(&U256::ONE);
+
+        if remainder == target {
+            return quotient.wrapping_add(&U256::ONE);
+        } else {
+            return quotient;
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -25,7 +56,7 @@ impl Serialize for BlockHeader {
         buffer.extend_from_slice(&self.prev_block);
         buffer.extend_from_slice(&self.merkle_root);
         buffer.extend_from_slice(&self.timestamp.to_le_bytes());
-        buffer.extend_from_slice(&self.target.to_le_bytes());
+        buffer.extend_from_slice(&self.nbits.to_le_bytes());
         buffer.extend_from_slice(&self.nonce.to_le_bytes());
         buffer
     }
@@ -47,8 +78,8 @@ impl Serialize for BlockHeader {
         let timestamp = u32::from_le_bytes(timestamp.try_into()?);
         *bytes = rest;
 
-        let (target, rest) = bytes.split_at(4);
-        let target = u32::from_le_bytes(target.try_into()?);
+        let (nbits, rest) = bytes.split_at(4);
+        let nbits = u32::from_le_bytes(nbits.try_into()?);
         *bytes = rest;
 
         let (nonce, rest) = bytes.split_at(4);
@@ -61,7 +92,7 @@ impl Serialize for BlockHeader {
             prev_block,
             merkle_root,
             timestamp,
-            target,
+            nbits,
             nonce,
         })
     }
@@ -128,7 +159,7 @@ impl Serialize for GetHeadersMessage {
 
 #[derive(Debug)]
 pub struct Headers {
-    headers: Vec<BlockHeader>,
+    pub headers: Vec<BlockHeader>,
 }
 impl Serialize for Headers {
     type Value = Self;
@@ -159,6 +190,15 @@ impl Serialize for Headers {
 
 pub struct BlockLocator {
     pub hashes: Vec<[u8; 32]>,
+}
+
+impl BlockLocator {
+    pub fn new(chain_tip: StoredData) -> Self {
+        let mut hashes = Vec::new();
+        hashes.push(chain_tip.hash);
+
+        Self { hashes }
+    }
 }
 
 impl Serialize for BlockLocator {

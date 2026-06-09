@@ -1,6 +1,7 @@
 use std::{array::TryFromSliceError, fmt::Display, io};
 
 pub mod handshake;
+pub mod index;
 pub mod inventory;
 pub mod network;
 pub mod peers;

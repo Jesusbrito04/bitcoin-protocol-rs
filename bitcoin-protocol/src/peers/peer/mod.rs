@@ -1,14 +1,27 @@
+use hex::encode;
+use sha2::{Digest, Sha256};
+
 use crate::{
-    P2PError, Serialize, handshake::VersionMessage, inventory::{InvMessage, block::{Block, BlockLocator, GetHeadersMessage, Headers}, transaction::Transaction}, network::{
-        ADDR, Addr, BLOCK, GETADDR, GETDATA, GETHEADERS, HEADERS, INV, IpAddress, MAINNET, MsgHeader, PING, PONG, TX, VERACK, VERSION
-    }, peers::PeerStore
+    handshake::VersionMessage,
+    index::store::HeaderStore,
+    inventory::{
+        block::{Block, BlockLocator, GetHeadersMessage, Headers},
+        transaction::Transaction,
+        InvMessage,
+    },
+    network::{
+        Addr, IpAddress, MsgHeader, ADDR, BLOCK, GETADDR, GETDATA, GETHEADERS, HEADERS, INV,
+        MAINNET, PING, PONG, TX, VERACK, VERSION,
+    },
+    peers::PeerStore,
+    P2PError, Serialize,
 };
 use std::{
     io::{self, Read, Write},
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -85,7 +98,9 @@ impl Peer<Handshake> {
             .as_secs()
             .try_into()
             .unwrap();
-        let my_ip = Ipv4Addr::from_str("127.0.0.1").unwrap().to_ipv6_mapped();
+        let my_ip = Ipv4Addr::from_str("127.0.0.1")
+            .map_err(|_| P2PError::Parse("Error parsing local ip".to_string()))?
+            .to_ipv6_mapped();
         let version_serialize = VersionMessage {
             version: 70015,
             services: 9,
@@ -176,30 +191,41 @@ impl Peer<Connected> {
         Ok(())
     }
 
-    pub fn run(&mut self, store: Arc<PeerStore>) -> Result<(), P2PError> {
-        self.get_addr()?;
-        let genesis_block = hex::decode("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f").unwrap().try_into().unwrap();
-        let blocklocator = BlockLocator {
-            hashes: vec![ genesis_block ]
-        };
+    pub fn get_headers(&mut self, chain_store: &Arc<Mutex<HeaderStore>>) -> Result<(), P2PError> {
+        let tip = chain_store
+            .lock()
+            .unwrap()
+            .chain_tip()
+            .map_err(|_| P2PError::Custom("Error getting the chain tip".to_string()))?;
+        let blocklocator = BlockLocator::new(tip);
 
         let getheaderspayload = GetHeadersMessage {
             version: 70015,
             locator: blocklocator,
-            hash_stop: [0x00; 32]
+            hash_stop: [0x00; 32],
         };
 
         let getheaders = MsgHeader {
             magic: MAINNET,
             command: GETHEADERS,
             payload_size: getheaderspayload.serialize().len() as u32,
-            checksum: MsgHeader::calculate_checksum(&getheaderspayload.serialize())
+            checksum: MsgHeader::calculate_checksum(&getheaderspayload.serialize()),
         };
 
         let mut message = Vec::new();
         message.extend_from_slice(&getheaders.serialize());
         message.extend_from_slice(&getheaderspayload.serialize());
         self.stream.write_all(&message)?;
+        Ok(())
+    }
+
+    pub fn run(
+        &mut self,
+        store: Arc<PeerStore>,
+        chain_store: Arc<Mutex<HeaderStore>>,
+    ) -> Result<(), P2PError> {
+        self.get_addr()?;
+        self.get_headers(&chain_store)?;
 
         loop {
             let mut network_mainnet: [u8; 4] = [0u8; 4];
@@ -277,7 +303,7 @@ impl Peer<Connected> {
                     BLOCK => {
                         let mut buffer_payload = vec![0; receive_header.payload_size as usize];
                         self.stream.read_exact(&mut buffer_payload)?;
-                        let block = Block::deserialize(&mut buffer_payload.as_ref())?;
+                        let _block = Block::deserialize(&mut buffer_payload.as_ref())?;
                     }
                     TX => {
                         let mut buffer_payload: Vec<u8> =
@@ -285,12 +311,29 @@ impl Peer<Connected> {
                         self.stream.read_exact(&mut buffer_payload)?;
                         let tx = Transaction::deserialize(&mut buffer_payload.as_slice())?;
                         println!("Tx{}", tx)
-                    },
+                    }
                     HEADERS => {
                         let mut buffer_payload = vec![0u8; receive_header.payload_size as usize];
                         self.stream.read_exact(&mut buffer_payload)?;
                         let headers = Headers::deserialize(&mut buffer_payload.as_slice())?;
-                        println!("Headers: {:?}", headers)
+                        for block_h in headers.headers {
+                            let tip = chain_store.lock().unwrap().chain_tip().unwrap();
+                            if tip.hash == block_h.prev_block {
+                                let hash = Sha256::digest(block_h.serialize());
+                                let mut hash2 = Sha256::digest(hash);
+                                chain_store
+                                    .lock()
+                                    .unwrap()
+                                    .add_header(hash2[..].try_into().unwrap(), block_h)
+                                    .unwrap();
+                                hash2.0.reverse();
+                                println!(
+                                    "Added block hash: {:?} height: {}",
+                                    encode(hash2.0),
+                                    tip.height + 1
+                                )
+                            }
+                        }
                     }
                     _ => {
                         let mut payload = vec![0; receive_header.payload_size as usize];

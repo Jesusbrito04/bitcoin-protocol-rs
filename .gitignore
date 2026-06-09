@@ -2,3 +2,4 @@
 /Cargo.lock
 .DS_Store
 /bitcoin-protocol/src/peers/db
+/bitcoin-protocol/src/index/db
