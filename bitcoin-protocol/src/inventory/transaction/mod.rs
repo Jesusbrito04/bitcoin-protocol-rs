@@ -1,6 +1,8 @@
 use std::fmt::Display;
 
-use crate::{decode_compact_size, encode_compact_size, Serialize};
+use hex::FromHexError;
+
+use crate::{decode_compact_size, encode_compact_size, P2PError, Serialize};
 
 #[derive(Debug)]
 pub struct Transaction {
@@ -13,9 +15,9 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn from_hex(raw_tx: String) -> Transaction {
-        let raw_bytes = hex::decode(raw_tx).unwrap();
-        Transaction::deserialize(&mut raw_bytes.as_slice()).unwrap()
+    pub fn from_hex(raw_tx: String) -> Result<Transaction, P2PError> {
+        let raw_bytes = hex::decode(raw_tx).map_err(|e| P2PError::Parse(e.to_string()))?;
+        Transaction::deserialize(&mut raw_bytes.as_slice())
     }
 }
 
@@ -77,7 +79,10 @@ impl Serialize for Transaction {
         buffer.extend_from_slice(&self.version.to_le_bytes());
 
         if segwit {
-            let (marker, flag) = self.marker_flag.unwrap();
+            let (marker, flag) = self
+                .marker_flag
+                .ok_or("Error getting market flag")
+                .expect("Error with market flag");
             buffer.push(marker);
             buffer.push(flag);
         }
@@ -111,14 +116,16 @@ impl Serialize for Transaction {
 
         buffer
     }
-    fn deserialize(bytes: &mut &[u8]) -> Result<Self::Value, crate::P2PError> {
+    fn deserialize(bytes: &mut &[u8]) -> Result<Self::Value, P2PError> {
         let (version, rest) = bytes.split_at(4);
         let version = u32::from_le_bytes(version.try_into()?);
         *bytes = rest;
         let mut marker_flag = None;
         if bytes[0] == 0x00 {
             let (marker, rest) = bytes.split_at(2);
-            let (m, f) = marker.split_first().unwrap();
+            let (m, f) = marker
+                .split_first()
+                .ok_or(P2PError::NotEnoughBytesToSplit)?;
             marker_flag = Some((*m, f[0]));
             *bytes = rest;
         }

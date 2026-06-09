@@ -97,7 +97,7 @@ impl Serialize for VersionMessage {
             u64::from_le_bytes(bytes[0..8].try_into().map_err(|_| {
                 P2PError::Parse(format!("Error while try to convert bytes into u64"))
             })?);
-        let addr_trans_ip: Ipv6Addr = Ipv6Addr::from_octets(bytes[8..24].try_into().unwrap());
+        let addr_trans_ip: Ipv6Addr = Ipv6Addr::from_octets(bytes[8..24].try_into()?);
         let addr_trans_port =
             u16::from_be_bytes(bytes[24..26].try_into().map_err(|_| {
                 P2PError::Parse(format!("Error while try to convert bytes into u16"))

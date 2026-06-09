@@ -94,10 +94,11 @@ impl Peer<Handshake> {
         // Build the Version-Message payload (identify my node).
         let time: i64 = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .map_err(|e| P2PError::Custom(format!("System Time Error: {}", e)))?
             .as_secs()
             .try_into()
-            .unwrap();
+            .map_err(|_| P2PError::Parse("Error parsing time to seconds".to_string()))?;
+
         let my_ip = Ipv4Addr::from_str("127.0.0.1")
             .map_err(|_| P2PError::Parse("Error parsing local ip".to_string()))?
             .to_ipv6_mapped();
@@ -194,7 +195,7 @@ impl Peer<Connected> {
     pub fn get_headers(&mut self, chain_store: &Arc<Mutex<HeaderStore>>) -> Result<(), P2PError> {
         let tip = chain_store
             .lock()
-            .unwrap()
+            .map_err(|e| P2PError::Custom(format!("Cant get the locked value: {e}")))?
             .chain_tip()
             .map_err(|_| P2PError::Custom("Error getting the chain tip".to_string()))?;
         let blocklocator = BlockLocator::new(tip);
@@ -317,15 +318,29 @@ impl Peer<Connected> {
                         self.stream.read_exact(&mut buffer_payload)?;
                         let headers = Headers::deserialize(&mut buffer_payload.as_slice())?;
                         for block_h in headers.headers {
-                            let tip = chain_store.lock().unwrap().chain_tip().unwrap();
+                            let tip = chain_store
+                                .lock()
+                                .map_err(|e| {
+                                    P2PError::Custom(format!("Cant get the locked value: {e}"))
+                                })?
+                                .chain_tip()
+                                .map_err(|e| P2PError::Custom(format!("{:?}", e)))?;
+
                             if tip.hash == block_h.prev_block {
                                 let hash = Sha256::digest(block_h.serialize());
                                 let mut hash2 = Sha256::digest(hash);
                                 chain_store
                                     .lock()
-                                    .unwrap()
-                                    .add_header(hash2[..].try_into().unwrap(), block_h)
-                                    .unwrap();
+                                    .map_err(|e| {
+                                        P2PError::Custom(format!("Cant get the locked value: {e}"))
+                                    })?
+                                    .add_header(hash2[..].try_into()?, block_h)
+                                    .map_err(|_| {
+                                        P2PError::Custom(
+                                            "Error trying to add new header".to_string(),
+                                        )
+                                    })?;
+
                                 hash2.0.reverse();
                                 println!(
                                     "Added block hash: {:?} height: {}",

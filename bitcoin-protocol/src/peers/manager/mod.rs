@@ -41,7 +41,11 @@ impl PeersManager {
 
                     sender
                         .send(format!("Connected correclty with peer: {:#?}", peer.peer))
-                        .unwrap();
+                        .map_err(|_| {
+                            P2PError::Custom(
+                                "Error with the thread when sending the message.".to_string(),
+                            )
+                        })?;
 
                     peer.run(store, header_store)?;
                     Ok(())
