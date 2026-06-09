@@ -133,7 +133,9 @@ impl HeaderStore {
         }
         let height_hash = format!("height_{}", height);
 
-        self.db.insert(height_hash, &hash).map_err(|e| Error::Database(e))?;
+        self.db
+            .insert(height_hash, &hash)
+            .map_err(|e| Error::Database(e))?;
 
         Ok(())
     }
@@ -166,11 +168,12 @@ impl HeaderStore {
 
     pub fn get_header_by_height(&self, height: u32) -> Result<StoredData, Error> {
         let height_hash = format!("height_{}", height);
-        if !self.db.contains_key(&height_hash).unwrap() {
-            return Err(Error::HashNotFound);
-        }
-        let hash= self.db.get(height_hash).unwrap().unwrap();
-        
-        self.get_header(&hash[..].try_into().unwrap())
+        let _ = self.db.contains_key(&height_hash).map_err(|_| Error::HashNotFound)?;
+
+        let hash = self.db.get(height_hash).map_err(
+        |_| Error::HashNotFound
+        )?.ok_or(Error::HashNotFound)?;
+
+        self.get_header(&hash[..].try_into().map_err(|_| Error::Parse("Cant find the header".to_string()))?)
     }
 }

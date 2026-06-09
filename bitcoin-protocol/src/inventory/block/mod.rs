@@ -1,7 +1,11 @@
+use std::sync::{Arc, Mutex};
+
 use crypto_bigint::U256;
 
 use crate::{
-    decode_compact_size, encode_compact_size, index::store::StoredData, P2PError, Serialize,
+    decode_compact_size, encode_compact_size,
+    index::store::{HeaderStore, StoredData},
+    P2PError, Serialize,
 };
 
 use super::transaction::Transaction;
@@ -193,11 +197,39 @@ pub struct BlockLocator {
 }
 
 impl BlockLocator {
-    pub fn new(chain_tip: StoredData) -> Self {
+    pub fn new(
+        chain_tip: StoredData,
+        chain_store: &Arc<Mutex<HeaderStore>>,
+    ) -> Result<Self, P2PError> {
+        let store = chain_store.lock().unwrap();
         let mut hashes = Vec::new();
-        hashes.push(chain_tip.hash);
+        let mut step = 1;
+        let mut current_height = chain_tip.height;
 
-        Self { hashes }
+        while current_height > 0 {
+            let data = store
+                .get_header_by_height(current_height)
+                .map_err(|_| P2PError::Custom("Error getting desired hash".to_string()))?;
+            hashes.push(data.hash);
+
+            if hashes.len() >= 10 {
+                step *= 2;
+                if step <= current_height {
+                    current_height -= step;
+                } else {
+                    break;
+                }
+            } else {
+                current_height -= step;
+            }
+        }
+
+        let genesis_hash = store
+            .get_header_by_height(0)
+            .map_err(|_| P2PError::Custom("Error getting desired hash".to_string()))?;
+        hashes.push(genesis_hash.hash);
+
+        Ok(Self { hashes })
     }
 }
 

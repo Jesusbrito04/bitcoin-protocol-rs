@@ -198,7 +198,7 @@ impl Peer<Connected> {
             .map_err(|e| P2PError::Custom(format!("Cant get the locked value: {e}")))?
             .chain_tip()
             .map_err(|_| P2PError::Custom("Error getting the chain tip".to_string()))?;
-        let blocklocator = BlockLocator::new(tip);
+        let blocklocator = BlockLocator::new(tip, chain_store)?;
 
         let getheaderspayload = GetHeadersMessage {
             version: 70015,
