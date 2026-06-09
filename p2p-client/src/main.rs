@@ -1,7 +1,7 @@
 use std::sync::{mpsc::channel, Arc};
 
 use bitcoin_protocol::{
-    inventory::{transaction::Transaction, InvMessage, InvType, InvVector},
+    inventory::{InvMessage, InvType, InvVector},
     peers::{manager::PeersManager, PeerStore},
     P2PError, Serialize,
 };

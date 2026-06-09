@@ -91,6 +91,11 @@ impl HeaderStore {
             }
             .serialize();
 
+            let height_hash = "height_0";
+
+            store
+                .insert(height_hash, &genesis_hash)
+                .map_err(|e| Error::Database(e))?;
             store
                 .insert(CHAIN_TIP, &genesis_hash)
                 .map_err(|e| Error::Database(e))?;
@@ -126,6 +131,9 @@ impl HeaderStore {
                 .insert(CHAIN_TIP, &hash)
                 .map_err(|e| Error::Database(e))?;
         }
+        let height_hash = format!("height_{}", height);
+
+        self.db.insert(height_hash, &hash).map_err(|e| Error::Database(e))?;
 
         Ok(())
     }
@@ -154,5 +162,15 @@ impl HeaderStore {
             .map_err(|_| Error::Parse("Tip hash has invalid length".to_string()))?;
 
         self.get_header(&hash_array)
+    }
+
+    pub fn get_header_by_height(&self, height: u32) -> Result<StoredData, Error> {
+        let height_hash = format!("height_{}", height);
+        if !self.db.contains_key(&height_hash).unwrap() {
+            return Err(Error::HashNotFound);
+        }
+        let hash= self.db.get(height_hash).unwrap().unwrap();
+        
+        self.get_header(&hash[..].try_into().unwrap())
     }
 }

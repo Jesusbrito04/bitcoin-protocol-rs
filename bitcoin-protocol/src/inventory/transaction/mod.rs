@@ -1,7 +1,5 @@
 use std::fmt::Display;
 
-use hex::FromHexError;
-
 use crate::{decode_compact_size, encode_compact_size, P2PError, Serialize};
 
 #[derive(Debug)]
