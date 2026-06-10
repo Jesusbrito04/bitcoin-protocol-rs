@@ -168,12 +168,25 @@ impl HeaderStore {
 
     pub fn get_header_by_height(&self, height: u32) -> Result<StoredData, Error> {
         let height_hash = format!("height_{}", height);
-        let _ = self.db.contains_key(&height_hash).map_err(|_| Error::HashNotFound)?;
 
-        let hash = self.db.get(height_hash).map_err(
-        |_| Error::HashNotFound
-        )?.ok_or(Error::HashNotFound)?;
+        if !self
+            .db
+            .contains_key(&height_hash)
+            .map_err(|e| Error::Database(e))?
+        {
+            return Err(Error::HashNotFound);
+        } else {
+            let hash = self
+                .db
+                .get(height_hash)
+                .map_err(|_| Error::HashNotFound)?
+                .ok_or(Error::HashNotFound)?;
 
-        self.get_header(&hash[..].try_into().map_err(|_| Error::Parse("Cant find the header".to_string()))?)
+            return self.get_header(
+                &hash[..]
+                    .try_into()
+                    .map_err(|_| Error::Parse("Cant find the header".to_string()))?,
+            );
+        };
     }
 }

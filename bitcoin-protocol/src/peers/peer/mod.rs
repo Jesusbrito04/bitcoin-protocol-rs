@@ -317,6 +317,7 @@ impl Peer<Connected> {
                         let mut buffer_payload = vec![0u8; receive_header.payload_size as usize];
                         self.stream.read_exact(&mut buffer_payload)?;
                         let headers = Headers::deserialize(&mut buffer_payload.as_slice())?;
+                        let headers_count = headers.headers.len();
                         for block_h in headers.headers {
                             let tip = chain_store
                                 .lock()
@@ -348,6 +349,10 @@ impl Peer<Connected> {
                                     tip.height + 1
                                 )
                             }
+                        }
+
+                        if headers_count as u32 >= 2000 {
+                            self.get_headers(&chain_store)?
                         }
                     }
                     _ => {
