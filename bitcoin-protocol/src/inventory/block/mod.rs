@@ -1,6 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    ops::Shr,
+    sync::{Arc, Mutex},
+};
 
 use crypto_bigint::U256;
+use sha2::{Digest, Sha256};
 
 use crate::{
     decode_compact_size, encode_compact_size,
@@ -32,6 +36,24 @@ impl BlockHeader {
         }
     }
 
+    pub fn target_to_nbits(target: U256) -> u32 {
+        let bits_count = target.bits();
+        let mut exponent = (bits_count + 7) / 8;
+
+        let mut coefficient = if exponent >= 3 {
+            target.shr(8 * (exponent - 3)).to_words()[0]
+        } else {
+            target.shl(8 * (3 - exponent)).to_words()[0]
+        };
+
+        if coefficient >= 0x800000 {
+            coefficient = coefficient >> 8;
+            exponent += 1;
+        }
+
+        (exponent << 24) | (coefficient as u32 & 0x00ffffff)
+    }
+
     pub fn get_chainwork(&self) -> U256 {
         let target = self.get_target().wrapping_add(&U256::ONE);
         let max = U256::MAX;
@@ -43,6 +65,17 @@ impl BlockHeader {
         } else {
             return quotient;
         }
+    }
+
+    pub fn validate_pow(&self) -> bool {
+        let target = self.get_target();
+
+        let hash1 = Sha256::digest(self.serialize());
+        let hash2 = Sha256::digest(hash1);
+
+        let hash_bigint = U256::from_le_slice(&hash2);
+
+        hash_bigint <= target
     }
 }
 

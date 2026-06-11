@@ -5,7 +5,7 @@ use crate::{
     handshake::VersionMessage,
     index::store::HeaderStore,
     inventory::{
-        block::{Block, BlockLocator, GetHeadersMessage, Headers},
+        block::{Block, BlockHeader, BlockLocator, GetHeadersMessage, Headers},
         transaction::Transaction,
         InvMessage,
     },
@@ -318,23 +318,35 @@ impl Peer<Connected> {
                         self.stream.read_exact(&mut buffer_payload)?;
                         let headers = Headers::deserialize(&mut buffer_payload.as_slice())?;
                         let headers_count = headers.headers.len();
+
+                        let mut chain_stored_lock = chain_store.lock().map_err(|e| {
+                            P2PError::Custom(format!("Cant get the locked value: {e}"))
+                        })?;
+
                         for block_h in headers.headers {
-                            let tip = chain_store
-                                .lock()
-                                .map_err(|e| {
-                                    P2PError::Custom(format!("Cant get the locked value: {e}"))
-                                })?
+                            let tip = chain_stored_lock
                                 .chain_tip()
                                 .map_err(|e| P2PError::Custom(format!("{:?}", e)))?;
 
                             if tip.hash == block_h.prev_block {
                                 let hash = Sha256::digest(block_h.serialize());
                                 let mut hash2 = Sha256::digest(hash);
-                                chain_store
-                                    .lock()
-                                    .map_err(|e| {
-                                        P2PError::Custom(format!("Cant get the locked value: {e}"))
-                                    })?
+                                let expected_target = chain_stored_lock.compute_next_target();
+                                let expected_nbits = BlockHeader::target_to_nbits(expected_target);
+
+                                if expected_nbits != block_h.nbits {
+                                    return Err(P2PError::Custom(
+                                        "Error target incorrect".to_string(),
+                                    ));
+                                }
+
+                                if !block_h.validate_pow() {
+                                    return Err(P2PError::Custom(
+                                        "Invalid Proof of work".to_string(),
+                                    ));
+                                }
+
+                                chain_stored_lock
                                     .add_header(hash2[..].try_into()?, block_h)
                                     .map_err(|_| {
                                         P2PError::Custom(

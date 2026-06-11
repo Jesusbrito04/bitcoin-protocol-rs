@@ -1,3 +1,5 @@
+use std::ops::Div;
+
 use crypto_bigint::U256;
 use hex::FromHexError;
 use sled::{open, Db, Error as dbError};
@@ -164,6 +166,48 @@ impl HeaderStore {
             .map_err(|_| Error::Parse("Tip hash has invalid length".to_string()))?;
 
         self.get_header(&hash_array)
+    }
+
+    pub fn compute_next_target(&self) -> U256 {
+        let block_tip = self.chain_tip().unwrap();
+        let block_height = block_tip.height;
+
+        if (block_height + 1) % 2016 != 0 {
+            let target = block_tip.header.get_target();
+            return target;
+        }
+
+        let first_timestamp = self
+            .get_header_by_height(block_height - 2015)
+            .unwrap()
+            .header
+            .timestamp;
+        let last_timestamp = block_tip.header.timestamp;
+
+        let actual = last_timestamp - first_timestamp;
+        let expected = 2016 * 10 * 60;
+
+        let actual_modified = if actual < 302400 {
+            302400
+        } else if actual > 4838400 {
+            4838400
+        } else {
+            actual
+        };
+
+        let current_target = block_tip.header.get_target();
+        let new_target = current_target
+            .checked_mul(&U256::from_u32(actual_modified))
+            .unwrap()
+            .div(U256::from_u32(expected));
+
+        let max_target =
+            U256::from_be_hex("00000000ffff0000000000000000000000000000000000000000000000000000");
+        if new_target.gt(&max_target) {
+            return max_target;
+        }
+
+        new_target
     }
 
     pub fn get_header_by_height(&self, height: u32) -> Result<StoredData, Error> {
