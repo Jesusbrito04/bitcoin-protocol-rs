@@ -331,7 +331,9 @@ impl Peer<Connected> {
                             if tip.hash == block_h.prev_block {
                                 let hash = Sha256::digest(block_h.serialize());
                                 let mut hash2 = Sha256::digest(hash);
-                                let expected_target = chain_stored_lock.compute_next_target();
+                                let expected_target = chain_stored_lock
+                                    .compute_next_target()
+                                    .map_err(|e| P2PError::DbError(e))?;
                                 let expected_nbits = BlockHeader::target_to_nbits(expected_target);
 
                                 if expected_nbits != block_h.nbits {

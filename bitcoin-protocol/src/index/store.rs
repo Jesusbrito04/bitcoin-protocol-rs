@@ -1,4 +1,4 @@
-use std::ops::Div;
+use std::{fmt::Display, ops::Div};
 
 use crypto_bigint::U256;
 use hex::FromHexError;
@@ -10,10 +10,33 @@ use crate::{inventory::block::BlockHeader, P2PError, Serialize};
 pub enum Error {
     Database(dbError),
     HashNotFound,
-    InvalidBlock(P2PError),
+    InvalidBlock(String),
     FromHex(FromHexError),
     Parse(String),
+    Custom(String),
 }
+
+impl std::error::Error for Error {}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Custom(err) => writeln!(f, "{}", err),
+            Error::Database(err) => writeln!(f, "Database error: {}", err),
+            Error::InvalidBlock(err) => writeln!(f, "Invalid block: {}", err),
+            Error::HashNotFound => writeln!(f, "Hash not found"),
+            Error::Parse(err) => writeln!(f, "Error while try to parse: {}", err),
+            Error::FromHex(err) => writeln!(f, "Try parsing to hex: {}", err),
+        }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Error::Custom(value.to_string())
+    }
+}
+
 #[derive(Debug)]
 pub struct HeaderStore {
     pub db: Db,
@@ -69,9 +92,7 @@ impl HeaderStore {
         let mut genesis_hash: [u8; 32] = hex::decode(HASH_GENESIS_BLOCK)
             .map_err(|e| Error::FromHex(e))?
             .try_into()
-            .map_err(|_| {
-                Error::InvalidBlock(P2PError::Custom("Invalid genesis block".to_string()))
-            })?;
+            .map_err(|e| Error::Parse(format!("Cant convert to array from vec: {:?}", e)))?;
 
         genesis_hash.reverse(); // Little endian bytes
 
@@ -82,7 +103,7 @@ impl HeaderStore {
             let height = 0;
             let bytes = hex::decode("0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a29ab5f49ffff001d1dac2b7c").map_err(|e| Error::Parse(e.to_string()))?;
             let blockheader = BlockHeader::deserialize(&mut bytes.as_slice())
-                .map_err(|e| Error::InvalidBlock(e))?;
+                .map_err(|e| Error::InvalidBlock(e.to_string()))?;
             let chainwork = blockheader.get_chainwork();
 
             let data = StoredData {
@@ -151,7 +172,7 @@ impl HeaderStore {
             .ok_or(|e| Error::Database(e))
             .map_err(|_| Error::HashNotFound)?;
 
-        StoredData::deserialize(&mut &data[..]).map_err(|e| Error::InvalidBlock(e))
+        StoredData::deserialize(&mut &data[..]).map_err(|e| Error::InvalidBlock(e.to_string()))
     }
 
     pub fn chain_tip(&self) -> Result<StoredData, Error> {
@@ -168,18 +189,17 @@ impl HeaderStore {
         self.get_header(&hash_array)
     }
 
-    pub fn compute_next_target(&self) -> U256 {
-        let block_tip = self.chain_tip().unwrap();
+    pub fn compute_next_target(&self) -> Result<U256, Error> {
+        let block_tip = self.chain_tip()?;
         let block_height = block_tip.height;
 
         if (block_height + 1) % 2016 != 0 {
             let target = block_tip.header.get_target();
-            return target;
+            return Ok(target);
         }
 
         let first_timestamp = self
-            .get_header_by_height(block_height - 2015)
-            .unwrap()
+            .get_header_by_height(block_height - 2015)?
             .header
             .timestamp;
         let last_timestamp = block_tip.header.timestamp;
@@ -198,16 +218,16 @@ impl HeaderStore {
         let current_target = block_tip.header.get_target();
         let new_target = current_target
             .checked_mul(&U256::from_u32(actual_modified))
-            .unwrap()
+            .ok_or(Error::Custom("Cant multiply operation".to_string()))?
             .div(U256::from_u32(expected));
 
         let max_target =
             U256::from_be_hex("00000000ffff0000000000000000000000000000000000000000000000000000");
         if new_target.gt(&max_target) {
-            return max_target;
+            return Ok(max_target);
         }
 
-        new_target
+        Ok(new_target)
     }
 
     pub fn get_header_by_height(&self, height: u32) -> Result<StoredData, Error> {

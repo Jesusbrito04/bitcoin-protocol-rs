@@ -1,5 +1,7 @@
 use std::{array::TryFromSliceError, fmt::Display, io};
 
+use crate::index::store;
+
 pub mod handshake;
 pub mod index;
 pub mod inventory;
@@ -69,6 +71,7 @@ pub enum P2PError {
     OutOfRange,
     Io(io::Error),
     InvalidSliceSize(TryFromSliceError),
+    DbError(store::Error),
 }
 
 impl Display for P2PError {
@@ -80,6 +83,7 @@ impl Display for P2PError {
             P2PError::Custom(s) => write!(f, "{}", s),
             P2PError::Io(s) => write!(f, "{}", s),
             P2PError::InvalidSliceSize(s) => write!(f, "{}", s),
+            P2PError::DbError(err) => writeln!(f, "{}", err),
         }
     }
 }
