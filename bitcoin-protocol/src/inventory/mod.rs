@@ -1,9 +1,13 @@
 use crate::{
     decode_compact_size, encode_compact_size,
+    index::store::HeaderStore,
     inventory::InvType::{MsgBlock, MsgTx, MsgWitnessBlock, MsgWitnessTx},
     P2PError, Serialize,
 };
-use std::convert::TryFrom;
+use std::{
+    convert::TryFrom,
+    sync::{Arc, Mutex},
+};
 pub mod block;
 pub mod transaction;
 
@@ -28,6 +32,43 @@ pub struct InvVector {
 #[derive(Debug, Clone)]
 pub struct InvMessage {
     pub inventory: Vec<InvVector>,
+}
+
+impl InvMessage {
+    pub fn is_new_header_available(
+        &self,
+        chain_store: &Arc<Mutex<HeaderStore>>,
+    ) -> Result<bool, P2PError> {
+        let chain_store_locked = chain_store
+            .lock()
+            .map_err(|e| P2PError::Custom(format!("Cant get the locked value: {e}")))?;
+
+        for inv in &self.inventory {
+            match inv.inv_type {
+                InvType::MsgBlock => {
+                    if !chain_store_locked
+                        .contains_header(&inv.inv_hash)
+                        .map_err(|e| P2PError::DbError(e))?
+                    {
+                        return Ok(true);
+                    }
+                    continue;
+                }
+                InvType::MsgWitnessBlock => {
+                    if !chain_store_locked
+                        .contains_header(&inv.inv_hash)
+                        .map_err(|e| P2PError::DbError(e))?
+                    {
+                        return Ok(true);
+                    }
+                    continue;
+                }
+                _ => continue,
+            }
+        }
+
+        return Ok(false);
+    }
 }
 
 impl TryFrom<u32> for InvType {

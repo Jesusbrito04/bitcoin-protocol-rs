@@ -198,6 +198,7 @@ impl Peer<Connected> {
             .map_err(|e| P2PError::Custom(format!("Cant get the locked value: {e}")))?
             .chain_tip()
             .map_err(|_| P2PError::Custom("Error getting the chain tip".to_string()))?;
+
         let blocklocator = BlockLocator::new(tip, chain_store)?;
 
         let getheaderspayload = GetHeadersMessage {
@@ -287,8 +288,13 @@ impl Peer<Connected> {
                     INV => {
                         let mut buffer_payload = vec![0; receive_header.payload_size as usize];
                         self.stream.read_exact(&mut buffer_payload)?;
-                        let inv = InvMessage::deserialize(&mut buffer_payload.as_ref());
-                        let get_data_payload = inv?.serialize();
+                        let inv_message = InvMessage::deserialize(&mut buffer_payload.as_ref())?;
+
+                        if inv_message.is_new_header_available(&chain_store)? {
+                            self.get_headers(&chain_store)?;
+                        }
+
+                        let get_data_payload = inv_message.serialize();
                         let get_data_header = MsgHeader {
                             magic: MAINNET,
                             command: GETDATA,

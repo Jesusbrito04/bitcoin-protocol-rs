@@ -253,4 +253,8 @@ impl HeaderStore {
             );
         };
     }
+
+    pub fn contains_header(&self, hash: &[u8; 32]) -> Result<bool, Error> {
+        self.db.contains_key(hash).map_err(|e| Error::Database(e))
+    }
 }
