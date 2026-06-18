@@ -1,6 +1,5 @@
+use index::store;
 use std::{array::TryFromSliceError, fmt::Display, io};
-
-use crate::index::store;
 
 pub mod handshake;
 pub mod index;

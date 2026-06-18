@@ -1,5 +1,5 @@
 use crate::{
-    index::store::HeaderStore,
+    index::chain::BlockChain,
     peers::{Peer, PeerStore},
     P2PError,
 };
@@ -23,16 +23,16 @@ impl PeersManager {
         }
     }
     pub fn manager(&mut self, tx: Sender<String>) -> Result<(), P2PError> {
-        let header_store = HeaderStore::new()
-            .map_err(|_| P2PError::Custom(format!("Error on initialize header store")))?;
+        let blockchain = BlockChain::new()?;
+
         if self.handlers.len() <= 5 {
             let tx = Arc::new(tx);
-            let header_store = Arc::new(Mutex::new(header_store));
+            let blockchain = Arc::new(Mutex::new(blockchain));
 
             for peer in self.store.get_peers()? {
                 let store = self.store.clone();
                 let sender = tx.clone();
-                let header_store: Arc<Mutex<HeaderStore>> = header_store.clone();
+                let blockchain = blockchain.clone();
 
                 let handler = thread::spawn(move || -> Result<(), P2PError> {
                     let socketaddr = SocketAddr::new(IpAddr::from(peer.ip), peer.port);
@@ -47,7 +47,7 @@ impl PeersManager {
                             )
                         })?;
 
-                    peer.run(store, header_store)?;
+                    peer.run(store, blockchain)?;
                     Ok(())
                 });
                 self.handlers.push(handler);

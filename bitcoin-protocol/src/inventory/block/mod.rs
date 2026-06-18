@@ -8,12 +8,12 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     decode_compact_size, encode_compact_size,
-    index::store::{HeaderStore, StoredData},
+    index::{chain::BlockChain, store::StoredData},
     P2PError, Serialize,
 };
 
 use super::transaction::Transaction;
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct BlockHeader {
     pub version: u32,
     pub prev_block: [u8; 32],
@@ -232,9 +232,11 @@ pub struct BlockLocator {
 impl BlockLocator {
     pub fn new(
         chain_tip: StoredData,
-        chain_store: &Arc<Mutex<HeaderStore>>,
+        chain_store: &Arc<Mutex<BlockChain>>,
     ) -> Result<Self, P2PError> {
-        let store = chain_store.lock().unwrap();
+        let store = chain_store
+            .lock()
+            .map_err(|e| P2PError::Custom(e.to_string()))?;
         let mut hashes = Vec::new();
         let mut step = 1;
         let mut current_height = chain_tip.height;

@@ -1,6 +1,6 @@
 use crate::{
     decode_compact_size, encode_compact_size,
-    index::store::HeaderStore,
+    index::chain::BlockChain,
     inventory::InvType::{MsgBlock, MsgTx, MsgWitnessBlock, MsgWitnessTx},
     P2PError, Serialize,
 };
@@ -37,7 +37,7 @@ pub struct InvMessage {
 impl InvMessage {
     pub fn is_new_header_available(
         &self,
-        chain_store: &Arc<Mutex<HeaderStore>>,
+        chain_store: &Arc<Mutex<BlockChain>>,
     ) -> Result<bool, P2PError> {
         let chain_store_locked = chain_store
             .lock()
@@ -46,19 +46,13 @@ impl InvMessage {
         for inv in &self.inventory {
             match inv.inv_type {
                 InvType::MsgBlock => {
-                    if !chain_store_locked
-                        .contains_header(&inv.inv_hash)
-                        .map_err(|e| P2PError::DbError(e))?
-                    {
+                    if !chain_store_locked.contains_header(&inv.inv_hash)? {
                         return Ok(true);
                     }
                     continue;
                 }
                 InvType::MsgWitnessBlock => {
-                    if !chain_store_locked
-                        .contains_header(&inv.inv_hash)
-                        .map_err(|e| P2PError::DbError(e))?
-                    {
+                    if !chain_store_locked.contains_header(&inv.inv_hash)? {
                         return Ok(true);
                     }
                     continue;

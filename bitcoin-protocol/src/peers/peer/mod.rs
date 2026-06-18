@@ -1,11 +1,8 @@
-use hex::encode;
-use sha2::{Digest, Sha256};
-
 use crate::{
     handshake::VersionMessage,
-    index::store::HeaderStore,
+    index::chain::BlockChain,
     inventory::{
-        block::{Block, BlockHeader, BlockLocator, GetHeadersMessage, Headers},
+        block::{Block, BlockLocator, GetHeadersMessage, Headers},
         transaction::Transaction,
         InvMessage,
     },
@@ -192,7 +189,7 @@ impl Peer<Connected> {
         Ok(())
     }
 
-    pub fn get_headers(&mut self, chain_store: &Arc<Mutex<HeaderStore>>) -> Result<(), P2PError> {
+    pub fn get_headers(&mut self, chain_store: &Arc<Mutex<BlockChain>>) -> Result<(), P2PError> {
         let tip = chain_store
             .lock()
             .map_err(|e| P2PError::Custom(format!("Cant get the locked value: {e}")))?
@@ -224,7 +221,7 @@ impl Peer<Connected> {
     pub fn run(
         &mut self,
         store: Arc<PeerStore>,
-        chain_store: Arc<Mutex<HeaderStore>>,
+        chain_store: Arc<Mutex<BlockChain>>,
     ) -> Result<(), P2PError> {
         self.get_addr()?;
         self.get_headers(&chain_store)?;
@@ -325,51 +322,8 @@ impl Peer<Connected> {
                         let headers = Headers::deserialize(&mut buffer_payload.as_slice())?;
                         let headers_count = headers.headers.len();
 
-                        let mut chain_stored_lock = chain_store.lock().map_err(|e| {
-                            P2PError::Custom(format!("Cant get the locked value: {e}"))
-                        })?;
-
-                        for block_h in headers.headers {
-                            let tip = chain_stored_lock
-                                .chain_tip()
-                                .map_err(|e| P2PError::Custom(format!("{:?}", e)))?;
-
-                            if tip.hash == block_h.prev_block {
-                                let hash = Sha256::digest(block_h.serialize());
-                                let mut hash2 = Sha256::digest(hash);
-                                let expected_target = chain_stored_lock
-                                    .compute_next_target()
-                                    .map_err(|e| P2PError::DbError(e))?;
-                                let expected_nbits = BlockHeader::target_to_nbits(expected_target);
-
-                                if expected_nbits != block_h.nbits {
-                                    return Err(P2PError::Custom(
-                                        "Error target incorrect".to_string(),
-                                    ));
-                                }
-
-                                if !block_h.validate_pow() {
-                                    return Err(P2PError::Custom(
-                                        "Invalid Proof of work".to_string(),
-                                    ));
-                                }
-
-                                chain_stored_lock
-                                    .add_header(hash2[..].try_into()?, block_h)
-                                    .map_err(|_| {
-                                        P2PError::Custom(
-                                            "Error trying to add new header".to_string(),
-                                        )
-                                    })?;
-
-                                hash2.0.reverse();
-                                println!(
-                                    "Added block hash: {:?} height: {}",
-                                    encode(hash2.0),
-                                    tip.height + 1
-                                )
-                            }
-                        }
+                        let blockchain = chain_store.lock().map_err(|_| P2PError::OutOfRange)?;
+                        blockchain.init_sync(headers)?;
 
                         if headers_count as u32 >= 2000 {
                             self.get_headers(&chain_store)?
