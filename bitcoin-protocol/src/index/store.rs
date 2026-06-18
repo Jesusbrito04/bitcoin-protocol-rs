@@ -78,8 +78,6 @@ impl Serialize for StoredData {
 }
 
 const BASE_PATH: &str = "./bitcoin-protocol/src/index/db";
-const CHAIN_TIP: &str = "__tip__";
-
 #[derive(Debug)]
 pub struct HeaderStore {
     pub db: Db,
@@ -103,7 +101,12 @@ impl HeaderStore {
         Ok(self.db.contains_key(key).map_err(|e| Error::Database(e))?)
     }
 
-    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<IVec>, Error> {
-        Ok(self.db.get(key).map_err(|e| Error::Database(e))?)
+    pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Result<IVec, Error> {
+        let value = self
+            .db
+            .get(key)
+            .map_err(|e| Error::Database(e))?
+            .ok_or(Error::HashNotFound)?;
+        Ok(value)
     }
 }

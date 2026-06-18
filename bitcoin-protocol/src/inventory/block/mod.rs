@@ -1,7 +1,4 @@
-use std::{
-    ops::Shr,
-    sync::{Arc, Mutex},
-};
+use std::{ops::Shr, sync::MutexGuard};
 
 use crypto_bigint::U256;
 use sha2::{Digest, Sha256};
@@ -164,6 +161,7 @@ impl Serialize for Block {
     }
 }
 
+#[derive(Debug)]
 pub struct GetHeadersMessage {
     pub version: u32,
     pub locator: BlockLocator,
@@ -225,43 +223,45 @@ impl Serialize for Headers {
     }
 }
 
+#[derive(Debug)]
 pub struct BlockLocator {
     pub hashes: Vec<[u8; 32]>,
 }
 
 impl BlockLocator {
     pub fn new(
-        chain_tip: StoredData,
-        chain_store: &Arc<Mutex<BlockChain>>,
+        chain_tip: &StoredData,
+        chain_store: &MutexGuard<'_, BlockChain>,
     ) -> Result<Self, P2PError> {
-        let store = chain_store
-            .lock()
-            .map_err(|e| P2PError::Custom(e.to_string()))?;
-        let mut hashes = Vec::new();
-        let mut step = 1;
-        let mut current_height = chain_tip.height;
+        let mut hashes: Vec<[u8; 32]> = Vec::new();
 
-        while current_height > 0 {
-            let data = store
-                .get_header_by_height(current_height)
-                .map_err(|_| P2PError::Custom("Error getting desired hash".to_string()))?;
-            hashes.push(data.hash);
+        if chain_tip.height != 0 {
+            let mut step = 1;
+            let mut current_height = chain_tip.height;
 
-            if hashes.len() >= 10 {
-                step *= 2;
-                if step <= current_height {
-                    current_height -= step;
+            while current_height > 0 {
+                let data = chain_store
+                    .get_header_by_height(current_height)
+                    .map_err(|_| P2PError::Custom("Error getting desired hash".to_string()))?;
+                hashes.push(data.hash);
+
+                if hashes.len() >= 10 {
+                    step *= 2;
+                    if step <= current_height {
+                        current_height -= step;
+                    } else {
+                        break;
+                    }
                 } else {
-                    break;
+                    current_height -= step;
                 }
-            } else {
-                current_height -= step;
             }
         }
 
-        let genesis_hash = store
+        let genesis_hash = chain_store
             .get_header_by_height(0)
             .map_err(|_| P2PError::Custom("Error getting desired hash".to_string()))?;
+
         hashes.push(genesis_hash.hash);
 
         Ok(Self { hashes })

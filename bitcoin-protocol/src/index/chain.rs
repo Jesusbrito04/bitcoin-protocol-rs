@@ -10,10 +10,12 @@ use crate::{
     P2PError, Serialize,
 };
 
-const HASH_GENESIS_BLOCK: &str = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+pub const HASH_GENESIS_BLOCK: &str =
+    "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
 const HEADER_GENESIS_BLOCK: &str = "0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a29ab5f49ffff001d1dac2b7c";
 const CHAIN_TIP: &str = "__tip__";
 
+#[derive(Debug)]
 pub struct BlockChain {
     mtp: Vec<BlockHeader>,
     store: HeaderStore,
@@ -23,13 +25,16 @@ impl BlockChain {
     pub fn new() -> Result<Self, P2PError> {
         let store: HeaderStore = HeaderStore::new().map_err(|e| P2PError::DbError(e))?;
 
-        Ok(Self {
+        let blockchain = Self {
             mtp: Vec::new(),
             store,
-        })
+        };
+        blockchain.ensure_block_genesis()?;
+        
+        Ok(blockchain)
     }
 
-    pub fn init_sync(&self, headers: Headers) -> Result<(), P2PError> {
+    fn ensure_block_genesis(&self) -> Result<(), P2PError> {
         let mut genesis_hash: [u8; 32] = hex::decode(HASH_GENESIS_BLOCK)
             .map_err(|_| P2PError::Custom("Error parsing hash hex".to_string()))?
             .try_into()
@@ -66,6 +71,10 @@ impl BlockChain {
                 .map_err(|e| P2PError::DbError(e))?;
         }
 
+        Ok(())
+    }
+
+    pub fn init_sync(&self, headers: Headers) -> Result<(), P2PError> {
         let mut current_tip = self
             .chain_tip()
             .map_err(|e| P2PError::Custom(format!("{:?}", e)))?;
@@ -73,7 +82,7 @@ impl BlockChain {
         for block_h in headers.headers {
             if current_tip.hash == block_h.prev_block {
                 let hash = Sha256::digest(block_h.serialize());
-                let mut hash2 = Sha256::digest(hash);
+                let hash2 = Sha256::digest(hash);
 
                 let expected_target = self.compute_next_target()?;
                 let expected_nbits = BlockHeader::target_to_nbits(expected_target);
@@ -88,7 +97,7 @@ impl BlockChain {
 
                 self.add_header(hash2[..].try_into()?, block_h)?;
 
-                hash2.0.reverse();
+                hash2.0;
 
                 current_tip = StoredData {
                     height: current_tip.height + 1,
@@ -140,12 +149,9 @@ impl BlockChain {
     }
 
     pub fn get_header(&self, hash: &[u8; 32]) -> Result<StoredData, P2PError> {
-        let data = self.store.get(hash).map_err(|e| P2PError::DbError(e))?;
-        if data.is_none() {
-            return Err(P2PError::DbError(Error::HashNotFound));
-        }
-        let data = data
-            .ok_or(|e| Error::Database(e))
+        let data = self
+            .store
+            .get(hash)
             .map_err(|_| P2PError::DbError(Error::HashNotFound))?;
 
         Ok(StoredData::deserialize(&mut &data[..])?)
@@ -155,8 +161,7 @@ impl BlockChain {
         let tip_hash = self
             .store
             .get(CHAIN_TIP)
-            .map_err(|e| P2PError::DbError(e))?
-            .ok_or(P2PError::DbError(Error::HashNotFound))?;
+            .map_err(|e| P2PError::DbError(e))?;
 
         let hash_array: [u8; 32] = tip_hash[..].try_into()?;
 
@@ -217,8 +222,7 @@ impl BlockChain {
             let hash = self
                 .store
                 .get(height_hash)
-                .map_err(|_| P2PError::DbError(Error::HashNotFound))?
-                .ok_or(P2PError::Parse("Error converting to result".to_string()))?;
+                .map_err(|_| P2PError::DbError(Error::HashNotFound))?;
 
             return self.get_header(&hash[..].try_into()?);
         };

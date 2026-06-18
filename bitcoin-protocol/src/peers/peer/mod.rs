@@ -18,7 +18,7 @@ use std::{
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -189,14 +189,15 @@ impl Peer<Connected> {
         Ok(())
     }
 
-    pub fn get_headers(&mut self, chain_store: &Arc<Mutex<BlockChain>>) -> Result<(), P2PError> {
+    pub fn get_headers(
+        &mut self,
+        chain_store: &MutexGuard<'_, BlockChain>,
+    ) -> Result<(), P2PError> {
         let tip = chain_store
-            .lock()
-            .map_err(|e| P2PError::Custom(format!("Cant get the locked value: {e}")))?
             .chain_tip()
             .map_err(|_| P2PError::Custom("Error getting the chain tip".to_string()))?;
 
-        let blocklocator = BlockLocator::new(tip, chain_store)?;
+        let blocklocator = BlockLocator::new(&tip, &chain_store)?;
 
         let getheaderspayload = GetHeadersMessage {
             version: 70015,
@@ -223,9 +224,9 @@ impl Peer<Connected> {
         store: Arc<PeerStore>,
         chain_store: Arc<Mutex<BlockChain>>,
     ) -> Result<(), P2PError> {
+        let blockchain = chain_store.lock().map_err(|_| P2PError::OutOfRange)?;
         self.get_addr()?;
-        self.get_headers(&chain_store)?;
-
+        self.get_headers(&blockchain)?;
         loop {
             let mut network_mainnet: [u8; 4] = [0u8; 4];
             if let Err(e) = self.stream.read_exact(&mut network_mainnet) {
@@ -288,7 +289,7 @@ impl Peer<Connected> {
                         let inv_message = InvMessage::deserialize(&mut buffer_payload.as_ref())?;
 
                         if inv_message.is_new_header_available(&chain_store)? {
-                            self.get_headers(&chain_store)?;
+                            self.get_headers(&blockchain)?;
                         }
 
                         let get_data_payload = inv_message.serialize();
@@ -321,12 +322,9 @@ impl Peer<Connected> {
                         self.stream.read_exact(&mut buffer_payload)?;
                         let headers = Headers::deserialize(&mut buffer_payload.as_slice())?;
                         let headers_count = headers.headers.len();
-
-                        let blockchain = chain_store.lock().map_err(|_| P2PError::OutOfRange)?;
                         blockchain.init_sync(headers)?;
-
-                        if headers_count as u32 >= 2000 {
-                            self.get_headers(&chain_store)?
+                        if headers_count as u32 == 2000 {
+                            self.get_headers(&blockchain)?
                         }
                     }
                     _ => {
