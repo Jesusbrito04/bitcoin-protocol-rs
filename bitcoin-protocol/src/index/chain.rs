@@ -17,7 +17,6 @@ const CHAIN_TIP: &str = "__tip__";
 
 #[derive(Debug)]
 pub struct BlockChain {
-    mtp: Vec<BlockHeader>,
     store: HeaderStore,
 }
 
@@ -26,12 +25,34 @@ impl BlockChain {
         let store: HeaderStore = HeaderStore::new().map_err(|e| P2PError::DbError(e))?;
 
         let blockchain = Self {
-            mtp: Vec::new(),
             store,
         };
+
         blockchain.ensure_block_genesis()?;
 
         Ok(blockchain)
+    }
+
+    fn get_median_time_past(&self, block_h: u32) -> Result<u32, P2PError> {
+        let mut timestamps: Vec<u32> = Vec::new();
+
+        let mut current_height = block_h;
+        for _ in 0..11 {
+            let data = self.get_header_by_height(current_height)?;
+            timestamps.push(data.header.timestamp);
+
+            if current_height == 0 {
+                break;
+            }
+
+            current_height -= 1;
+        };
+
+        timestamps.sort_unstable();
+
+        let median = timestamps.len() / 2;
+
+        Ok(timestamps[median])
     }
 
     fn ensure_block_genesis(&self) -> Result<(), P2PError> {
@@ -86,6 +107,12 @@ impl BlockChain {
 
                 let expected_target = self.compute_next_target()?;
                 let expected_nbits = BlockHeader::target_to_nbits(expected_target);
+
+                let network_time = self.get_median_time_past(current_tip.height)?;
+
+                if block_h.timestamp <= network_time {
+                    return Err(P2PError::Custom("Error invalid timestamp: has to be greater than MTP".to_string()));
+                }
 
                 if expected_nbits != block_h.nbits {
                     return Err(P2PError::Custom("Error target incorrect".to_string()));
