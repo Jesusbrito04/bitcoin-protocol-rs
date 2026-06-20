@@ -189,15 +189,16 @@ impl Peer<Connected> {
         Ok(())
     }
 
-    pub fn get_headers(
-        &mut self,
-        chain_store: &MutexGuard<'_, BlockChain>,
-    ) -> Result<(), P2PError> {
-        let tip = chain_store
-            .chain_tip()
-            .map_err(|_| P2PError::Custom("Error getting the chain tip".to_string()))?;
-
-        let blocklocator = BlockLocator::new(&tip, &chain_store)?;
+    pub fn get_headers(&mut self, chain_store: &Arc<Mutex<BlockChain>>) -> Result<(), P2PError> {
+        let blocklocator = {
+            let blockchain_locked = chain_store
+                .lock()
+                .map_err(|_| P2PError::Custom("Error trying to get lock".to_string()))?;
+            let tip = blockchain_locked
+                .chain_tip()
+                .map_err(|_| P2PError::Custom("Error getting the chain tip".to_string()))?;
+            BlockLocator::new(&tip, &blockchain_locked)?
+        };
 
         let getheaderspayload = GetHeadersMessage {
             version: 70015,
@@ -224,9 +225,8 @@ impl Peer<Connected> {
         store: Arc<PeerStore>,
         chain_store: Arc<Mutex<BlockChain>>,
     ) -> Result<(), P2PError> {
-        let blockchain = chain_store.lock().map_err(|_| P2PError::OutOfRange)?;
         self.get_addr()?;
-        self.get_headers(&blockchain)?;
+        self.get_headers(&chain_store)?;
         loop {
             let mut network_mainnet: [u8; 4] = [0u8; 4];
             if let Err(e) = self.stream.read_exact(&mut network_mainnet) {
@@ -289,7 +289,7 @@ impl Peer<Connected> {
                         let inv_message = InvMessage::deserialize(&mut buffer_payload.as_ref())?;
 
                         if inv_message.is_new_header_available(&chain_store)? {
-                            self.get_headers(&blockchain)?;
+                            self.get_headers(&chain_store)?;
                         }
 
                         let get_data_payload = inv_message.serialize();
@@ -322,9 +322,14 @@ impl Peer<Connected> {
                         self.stream.read_exact(&mut buffer_payload)?;
                         let headers = Headers::deserialize(&mut buffer_payload.as_slice())?;
                         let headers_count = headers.headers.len();
-                        blockchain.init_sync(headers)?;
+                        {
+                            let blockchain_locked = chain_store.lock().map_err(|_| {
+                                P2PError::Custom("Error trying to get lock".to_string())
+                            })?;
+                            blockchain_locked.init_sync(headers)?;
+                        }
                         if headers_count as u32 == 2000 {
-                            self.get_headers(&blockchain)?
+                            self.get_headers(&chain_store)?
                         }
                     }
                     _ => {

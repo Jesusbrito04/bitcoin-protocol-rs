@@ -30,7 +30,7 @@ impl BlockChain {
             store,
         };
         blockchain.ensure_block_genesis()?;
-        
+
         Ok(blockchain)
     }
 
