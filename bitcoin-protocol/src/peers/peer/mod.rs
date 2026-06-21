@@ -112,7 +112,7 @@ impl Peer<Handshake> {
             nonce: 232832832,
             user_agent: "/Jesus:0.1.0/".to_string(),
             start_height: 0,
-            relay: false,
+            relay: true,
         }
         .serialize();
 
@@ -286,6 +286,7 @@ impl Peer<Connected> {
                     INV => {
                         let mut buffer_payload = vec![0; receive_header.payload_size as usize];
                         self.stream.read_exact(&mut buffer_payload)?;
+
                         let inv_message = InvMessage::deserialize(&mut buffer_payload.as_ref())?;
 
                         if inv_message.is_new_header_available(&chain_store)? {
@@ -299,6 +300,7 @@ impl Peer<Connected> {
                             payload_size: get_data_payload.len() as u32,
                             checksum: MsgHeader::calculate_checksum(&get_data_payload),
                         };
+
                         let mut message: Vec<u8> =
                             Vec::with_capacity(24 + get_data_header.payload_size as usize);
                         message.extend_from_slice(&get_data_header.serialize());
@@ -315,7 +317,7 @@ impl Peer<Connected> {
                             vec![0u8; receive_header.payload_size as usize];
                         self.stream.read_exact(&mut buffer_payload)?;
                         let tx = Transaction::deserialize(&mut buffer_payload.as_slice())?;
-                        println!("Tx{}", tx)
+                        println!("Tx: {} \n", hex::encode(tx.serialize()))
                     }
                     HEADERS => {
                         let mut buffer_payload = vec![0u8; receive_header.payload_size as usize];

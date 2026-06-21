@@ -24,9 +24,7 @@ impl BlockChain {
     pub fn new() -> Result<Self, P2PError> {
         let store: HeaderStore = HeaderStore::new().map_err(|e| P2PError::DbError(e))?;
 
-        let blockchain = Self {
-            store,
-        };
+        let blockchain = Self { store };
 
         blockchain.ensure_block_genesis()?;
 
@@ -46,7 +44,7 @@ impl BlockChain {
             }
 
             current_height -= 1;
-        };
+        }
 
         timestamps.sort_unstable();
 
@@ -111,7 +109,9 @@ impl BlockChain {
                 let network_time = self.get_median_time_past(current_tip.height)?;
 
                 if block_h.timestamp <= network_time {
-                    return Err(P2PError::Custom("Error invalid timestamp: has to be greater than MTP".to_string()));
+                    return Err(P2PError::Custom(
+                        "Error invalid timestamp: has to be greater than MTP".to_string(),
+                    ));
                 }
 
                 if expected_nbits != block_h.nbits {
