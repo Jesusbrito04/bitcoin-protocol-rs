@@ -1,3 +1,5 @@
+use std::time::{ SystemTime };
+
 use crate::{decode_compact_size, encode_compact_size, P2PError, Serialize};
 use sha2::{Digest, Sha256};
 // Magic bytes indicating the originating network. They are by default little-endian bytes.
@@ -181,6 +183,24 @@ pub struct IpAddress {
     pub service: u64,
     pub ip: [u8; 16],
     pub port: u16,
+}
+
+impl Default for IpAddress {
+    fn default() -> Self {
+        let time = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("Can't get the unix timestamp")
+            .as_secs()
+            .try_into()
+            .expect("Can't parse Duration to secs");
+
+        Self {
+            time,
+            service: 1,
+            ip: [0; 16],
+            port: 8333,
+        }
+    }
 }
 
 impl Serialize for IpAddress {

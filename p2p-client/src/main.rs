@@ -1,4 +1,4 @@
-use std::sync::{mpsc::channel, Arc};
+use std::sync::mpsc::channel;
 
 use bitcoin_protocol::{
     inventory::{InvMessage, InvType, InvVector},
@@ -30,7 +30,9 @@ fn main() -> Result<(), P2PError> {
     };
     let _inv_serialized = my_inventory.serialize();
     let (sender, receiver) = channel();
-    let store = Arc::new(PeerStore::new()?);
+
+    let store = PeerStore::new()?;
+
     let mut manager = PeersManager::new(store);
     manager.manager(sender)?;
 

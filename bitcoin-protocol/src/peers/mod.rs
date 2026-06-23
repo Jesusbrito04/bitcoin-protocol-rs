@@ -1,5 +1,6 @@
 use crate::{network::IpAddress, P2PError, Serialize};
 use sled::{open, Db, IVec};
+use std::net::{ IpAddr, ToSocketAddrs };
 
 pub mod peer;
 pub use peer::Peer;
@@ -29,6 +30,7 @@ impl PeerStore {
         let _ = db
             .insert(b"__version__", &CURRENT_DB_VERSION.to_le_bytes())
             .map_err(|_| "Error inserting db version");
+
         Ok(PeerStore {
             version: CURRENT_DB_VERSION,
             db: db,
@@ -57,5 +59,22 @@ impl PeerStore {
             peers.push(peer);
         }
         Ok(peers)
+    }
+
+    pub fn seed_peers(&mut self) -> Result<(), P2PError> {
+        let seeds = "seed.bitcoin.sipa.be:8333";
+        let response = seeds.to_socket_addrs().map_err(|e| P2PError::Io(e))?;
+        for socket in response {
+            let mut peer = IpAddress::default();
+            let ip = match socket.ip() {
+                IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
+                IpAddr::V6(ip) => ip.octets(),
+            };
+
+            peer.ip.copy_from_slice(&ip[..]);
+
+            self.add_peer(peer)?;
+        }
+        Ok(())
     }
 }

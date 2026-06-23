@@ -4,7 +4,7 @@ use crate::{
     P2PError,
 };
 use std::{
-    net::{IpAddr, SocketAddr},
+    net::{ IpAddr, SocketAddr },
     sync::{mpsc::Sender, Arc, Mutex},
     thread::{self, JoinHandle},
 };
@@ -12,11 +12,11 @@ use std::{
 #[derive(Debug)]
 pub struct PeersManager {
     pub handlers: Vec<JoinHandle<Result<(), P2PError>>>,
-    pub store: Arc<PeerStore>,
+    pub store: PeerStore,
 }
 
 impl PeersManager {
-    pub fn new(store: Arc<PeerStore>) -> Self {
+    pub fn new(store: PeerStore) -> Self {
         Self {
             handlers: vec![],
             store,
@@ -24,8 +24,9 @@ impl PeersManager {
     }
     pub fn manager(&mut self, tx: Sender<String>) -> Result<(), P2PError> {
         let blockchain = BlockChain::new()?;
+        self.store.seed_peers()?;
 
-        if self.handlers.len() <= 5 {
+        if self.handlers.len() <= 5 && self.store.get_peers()?.len() > 0 {
             let tx = Arc::new(tx);
             let blockchain = Arc::new(Mutex::new(blockchain));
 

@@ -222,7 +222,7 @@ impl Peer<Connected> {
 
     pub fn run(
         &mut self,
-        store: Arc<PeerStore>,
+        store: PeerStore,
         chain_store: Arc<Mutex<BlockChain>>,
     ) -> Result<(), P2PError> {
         self.get_addr()?;
